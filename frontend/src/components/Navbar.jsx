@@ -8,11 +8,15 @@ import {
   Bot, 
   Cpu,
   Layers,
-  Settings
+  Settings,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import { getOpenRouterKey } from '../services/openrouter';
 
 export default function Navbar({ 
+  user,
+  onLogout,
   onOpenCopilot, 
   onOpenCreateChatbot, 
   onOpenCreateModel, 
@@ -150,6 +154,33 @@ export default function Navbar({
         >
           <Bot className="w-4 h-4" />
         </button>
+
+        {/* Google User Profile & Logout */}
+        {user && (
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+            <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-800 py-1 px-2.5 rounded-2xl">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow-sm overflow-hidden">
+                {user.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  user.name.charAt(0).toUpperCase()
+                )}
+              </div>
+              <div className="hidden xl:block text-left">
+                <span className="text-[11px] font-bold text-white leading-none block">{user.name}</span>
+                <span className="text-[9px] text-slate-400 leading-none block truncate max-w-[100px]">{user.email}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onLogout}
+              className="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 transition-all active:scale-95"
+              title="Disconnetti account Google"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

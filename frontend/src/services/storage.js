@@ -65,10 +65,13 @@ const DEFAULT_DATASETS = [
   }
 ];
 
+import { getUserScopedKey } from './auth';
+
 // --- MODELS ---
 export const getCustomModels = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.MODELS);
+    const key = getUserScopedKey(STORAGE_KEYS.MODELS);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : DEFAULT_MODELS;
   } catch (e) {
     return DEFAULT_MODELS;
@@ -92,20 +95,23 @@ export const saveCustomModel = (model) => {
     models.unshift(updatedModel);
   }
 
-  localStorage.setItem(STORAGE_KEYS.MODELS, JSON.stringify(models));
+  const key = getUserScopedKey(STORAGE_KEYS.MODELS);
+  localStorage.setItem(key, JSON.stringify(models));
   return updatedModel;
 };
 
 export const deleteCustomModel = (id) => {
   const models = getCustomModels().filter((m) => m.id !== id);
-  localStorage.setItem(STORAGE_KEYS.MODELS, JSON.stringify(models));
+  const key = getUserScopedKey(STORAGE_KEYS.MODELS);
+  localStorage.setItem(key, JSON.stringify(models));
   return models;
 };
 
 // --- CHATBOTS ---
 export const getCustomChatbots = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CHATBOTS);
+    const key = getUserScopedKey(STORAGE_KEYS.CHATBOTS);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : DEFAULT_CHATBOTS;
   } catch (e) {
     return DEFAULT_CHATBOTS;
@@ -113,9 +119,9 @@ export const getCustomChatbots = () => {
 };
 
 export const saveCustomChatbot = (chatbot) => {
-  const bots = getCustomChatbots();
-  const existingIdx = bots.findIndex((b) => b.id === chatbot.id);
-  const updatedBot = {
+  const chatbots = getCustomChatbots();
+  const existingIdx = chatbots.findIndex((c) => c.id === chatbot.id);
+  const updatedChatbot = {
     ...chatbot,
     id: chatbot.id || `bot-${Date.now()}`,
     createdAt: chatbot.createdAt || new Date().toISOString(),
@@ -123,25 +129,28 @@ export const saveCustomChatbot = (chatbot) => {
   };
 
   if (existingIdx >= 0) {
-    bots[existingIdx] = updatedBot;
+    chatbots[existingIdx] = updatedChatbot;
   } else {
-    bots.unshift(updatedBot);
+    chatbots.unshift(updatedChatbot);
   }
 
-  localStorage.setItem(STORAGE_KEYS.CHATBOTS, JSON.stringify(bots));
-  return updatedBot;
+  const key = getUserScopedKey(STORAGE_KEYS.CHATBOTS);
+  localStorage.setItem(key, JSON.stringify(chatbots));
+  return updatedChatbot;
 };
 
 export const deleteCustomChatbot = (id) => {
-  const bots = getCustomChatbots().filter((b) => b.id !== id);
-  localStorage.setItem(STORAGE_KEYS.CHATBOTS, JSON.stringify(bots));
-  return bots;
+  const chatbots = getCustomChatbots().filter((c) => c.id !== id);
+  const key = getUserScopedKey(STORAGE_KEYS.CHATBOTS);
+  localStorage.setItem(key, JSON.stringify(chatbots));
+  return chatbots;
 };
 
 // --- DATASETS ---
 export const getCustomDatasets = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DATASETS);
+    const key = getUserScopedKey(STORAGE_KEYS.DATASETS);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : DEFAULT_DATASETS;
   } catch (e) {
     return DEFAULT_DATASETS;
@@ -165,13 +174,15 @@ export const saveCustomDataset = (dataset) => {
     datasets.unshift(updatedDataset);
   }
 
-  localStorage.setItem(STORAGE_KEYS.DATASETS, JSON.stringify(datasets));
+  const key = getUserScopedKey(STORAGE_KEYS.DATASETS);
+  localStorage.setItem(key, JSON.stringify(datasets));
   return updatedDataset;
 };
 
 export const deleteCustomDataset = (id) => {
   const datasets = getCustomDatasets().filter((d) => d.id !== id);
-  localStorage.setItem(STORAGE_KEYS.DATASETS, JSON.stringify(datasets));
+  const key = getUserScopedKey(STORAGE_KEYS.DATASETS);
+  localStorage.setItem(key, JSON.stringify(datasets));
   return datasets;
 };
 

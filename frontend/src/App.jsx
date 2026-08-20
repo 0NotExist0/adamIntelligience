@@ -16,6 +16,7 @@ import ChatbotModal from './components/ChatbotModal';
 import OpenRouterModal from './components/OpenRouterModal';
 import AICopilotDrawer from './components/AICopilotDrawer';
 import MemoryVaultModal from './components/MemoryVaultModal';
+import GoogleAuthGateway from './components/GoogleAuthGateway';
 
 import { 
   getCustomModels, 
@@ -30,11 +31,13 @@ import {
 } from './services/storage';
 
 import { getMemories } from './services/memory';
+import { getCurrentUser, logoutUser } from './services/auth';
 
 import { Bot } from 'lucide-react';
 
 function DashboardApp() {
   const { addToast } = useToast();
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const [activeTab, setActiveTab] = useState('dashboard');
   
   // Data state
@@ -53,14 +56,22 @@ function DashboardApp() {
   const [playgroundInitialModel, setPlaygroundInitialModel] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentUser) {
+      loadData();
+    }
+  }, [currentUser]);
 
   const loadData = () => {
     setModels(getCustomModels());
     setChatbots(getCustomChatbots());
     setDatasets(getCustomDatasets());
     setMemories(getMemories());
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
+    addToast('Account disconnesso con successo', 'info');
   };
 
   const handleSaveModel = (newModel) => {
@@ -118,10 +129,17 @@ function DashboardApp() {
     datasetsCount: datasets.length
   };
 
+  // If not logged in, enforce Google Authentication Gateway
+  if (!currentUser) {
+    return <GoogleAuthGateway onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-purple-500/30 selection:text-purple-200">
       {/* Top Navbar */}
       <Navbar
+        user={currentUser}
+        onLogout={handleLogout}
         onOpenCopilot={() => setIsCopilotOpen(true)}
         onOpenCreateChatbot={() => setIsCreateChatbotOpen(true)}
         onOpenCreateModel={() => setIsCreateModelOpen(true)}

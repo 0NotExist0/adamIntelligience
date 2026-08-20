@@ -26,12 +26,26 @@ const DEFAULT_MEMORIES = [
   }
 ];
 
+import { getUserScopedKey, getCurrentUser } from './auth';
+
 export const getMemories = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = getUserScopedKey(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_MEMORIES));
-      return DEFAULT_MEMORIES;
+      const user = getCurrentUser();
+      const initialMemories = [
+        ...DEFAULT_MEMORIES,
+        ...(user ? [{
+          id: `mem-user-init`,
+          text: `L'utente connesso è ${user.name} (${user.email}). Il suo account Google Drive è collegato per il salvataggio dei modelli.`,
+          category: 'Profilo Utente',
+          source: 'Google Auth',
+          createdAt: new Date().toISOString()
+        }] : [])
+      ];
+      localStorage.setItem(key, JSON.stringify(initialMemories));
+      return initialMemories;
     }
     return JSON.parse(raw);
   } catch (e) {
@@ -57,18 +71,21 @@ export const saveMemory = (text, category = 'Generale', source = 'Utente / AI') 
   };
 
   memories.unshift(newMem);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(memories));
+  const key = getUserScopedKey(STORAGE_KEY);
+  localStorage.setItem(key, JSON.stringify(memories));
   return newMem;
 };
 
 export const deleteMemory = (id) => {
   const memories = getMemories().filter((m) => m.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(memories));
+  const key = getUserScopedKey(STORAGE_KEY);
+  localStorage.setItem(key, JSON.stringify(memories));
   return memories;
 };
 
 export const clearAllMemories = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+  const key = getUserScopedKey(STORAGE_KEY);
+  localStorage.setItem(key, JSON.stringify([]));
   return [];
 };
 
