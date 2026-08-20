@@ -17,6 +17,8 @@ export default function Navbar({
   onOpenCreateChatbot, 
   onOpenCreateModel, 
   onOpenOpenRouter, 
+  onOpenMemory,
+  memoryCount = 0,
   onNavigate 
 }) {
   const hasKey = Boolean(getOpenRouterKey());
@@ -38,10 +40,10 @@ export default function Navbar({
                 AI Studio Pro
               </span>
               <span className="text-[10px] font-bold tracking-wide uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                Drive + OpenRouter
+                Drive + Memory
               </span>
             </div>
-            <p className="text-xs text-slate-400">Hub Modelli AI, Chatbot & Google Drive</p>
+            <p className="text-xs text-slate-400">Hub Modelli AI, Memoria Persistente & Google Drive</p>
           </div>
         </div>
       </div>
@@ -82,6 +84,19 @@ export default function Navbar({
 
       {/* Right: Quick actions */}
       <div className="flex items-center gap-2.5">
+        {/* Memory Vault Button */}
+        <button
+          onClick={onOpenMemory}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-950/40 hover:bg-purple-900/40 text-purple-200 border border-purple-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+          title="Gestisci la memoria a lungo termine dell'AI"
+        >
+          <span className="text-sm">🧠</span>
+          <span className="hidden sm:inline">Memoria AI</span>
+          <span className="text-[10px] bg-purple-500/30 px-1.5 py-0.2 rounded-full font-mono">
+            {memoryCount}
+          </span>
+        </button>
+
         {/* Google Drive Link */}
         <a
           href="https://drive.google.com/drive/my-drive"
@@ -91,7 +106,7 @@ export default function Navbar({
           title="Apri Google Drive"
         >
           <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-          <span>Google Drive</span>
+          <span>Drive</span>
           <ExternalLink className="w-3 h-3 text-slate-500" />
         </a>
 

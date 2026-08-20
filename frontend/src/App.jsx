@@ -15,6 +15,7 @@ import CreateChatbotModal from './components/CreateChatbotModal';
 import ChatbotModal from './components/ChatbotModal';
 import OpenRouterModal from './components/OpenRouterModal';
 import AICopilotDrawer from './components/AICopilotDrawer';
+import MemoryVaultModal from './components/MemoryVaultModal';
 
 import { 
   getCustomModels, 
@@ -28,6 +29,8 @@ import {
   deleteCustomDataset
 } from './services/storage';
 
+import { getMemories } from './services/memory';
+
 import { Bot } from 'lucide-react';
 
 function DashboardApp() {
@@ -38,12 +41,14 @@ function DashboardApp() {
   const [models, setModels] = useState([]);
   const [chatbots, setChatbots] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const [memories, setMemories] = useState([]);
 
   // Modals state
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isCreateChatbotOpen, setIsCreateChatbotOpen] = useState(false);
   const [isCreateModelOpen, setIsCreateModelOpen] = useState(false);
   const [isOpenRouterModalOpen, setIsOpenRouterModalOpen] = useState(false);
+  const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [activeChatbotModal, setActiveChatbotModal] = useState(null);
   const [playgroundInitialModel, setPlaygroundInitialModel] = useState(null);
 
@@ -55,6 +60,7 @@ function DashboardApp() {
     setModels(getCustomModels());
     setChatbots(getCustomChatbots());
     setDatasets(getCustomDatasets());
+    setMemories(getMemories());
   };
 
   const handleSaveModel = (newModel) => {
@@ -120,6 +126,8 @@ function DashboardApp() {
         onOpenCreateChatbot={() => setIsCreateChatbotOpen(true)}
         onOpenCreateModel={() => setIsCreateModelOpen(true)}
         onOpenOpenRouter={() => setIsOpenRouterModalOpen(true)}
+        onOpenMemory={() => setIsMemoryModalOpen(true)}
+        memoryCount={memories.length}
         onNavigate={(tab) => setActiveTab(tab)}
       />
 
@@ -130,6 +138,7 @@ function DashboardApp() {
           activeTab={activeTab}
           onNavigate={(tab) => setActiveTab(tab)}
           onOpenCopilot={() => setIsCopilotOpen(true)}
+          onOpenMemory={() => setIsMemoryModalOpen(true)}
           stats={stats}
         />
 
@@ -232,6 +241,13 @@ function DashboardApp() {
           onClose={() => setActiveChatbotModal(null)}
         />
       )}
+
+      {/* Memory Vault Modal */}
+      <MemoryVaultModal
+        isOpen={isMemoryModalOpen}
+        onClose={() => setIsMemoryModalOpen(false)}
+        onMemoriesUpdated={(mems) => setMemories(mems)}
+      />
 
       {/* OpenRouter Key Setup Modal */}
       <OpenRouterModal

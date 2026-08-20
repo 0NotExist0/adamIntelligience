@@ -9,16 +9,17 @@ import {
   Settings, 
   Sparkles, 
   ExternalLink,
-  FolderDown
+  FolderDown,
+  Brain
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, stats }) {
+export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, onOpenMemory, stats }) {
   const navItems = [
     { id: 'dashboard', label: 'Panoramica Hub', icon: LayoutDashboard, badge: null },
     { id: 'models', label: 'Modelli & Drive', icon: Cpu, badge: stats?.modelsCount || null },
     { id: 'chatbots', label: 'Chatbot Studio', icon: Bot, badge: stats?.chatbotsCount || null },
     { id: 'datasets', label: 'Dataset di Training', icon: Database, badge: stats?.datasetsCount || null },
-    { id: 'playground', label: 'Playground AI', icon: Zap, badge: '100+ AI' },
+    { id: 'playground', label: 'Playground AI', icon: Zap, badge: '400+ AI' },
     { id: 'settings', label: 'Impostazioni & Chiavi', icon: Settings, badge: null }
   ];
 
@@ -60,6 +61,26 @@ export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, stats })
               </button>
             );
           })}
+        </div>
+
+        {/* Memory Vault Widget */}
+        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-purple-950/30 via-slate-900/80 to-slate-900/80 border border-purple-500/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+              <Brain className="w-4 h-4 text-purple-400" />
+              <span>Memoria Attiva</span>
+            </div>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+          <p className="text-[10px] text-slate-400 leading-tight">
+            L'AI consulta i fatti memorizzati prima di ogni risposta.
+          </p>
+          <button
+            onClick={onOpenMemory}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-[11px] font-bold transition-all"
+          >
+            <span>Gestisci Memoria</span>
+          </button>
         </div>
 
         {/* Google Drive Fast Access Widget */}

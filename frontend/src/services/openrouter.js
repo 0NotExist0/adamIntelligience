@@ -199,12 +199,15 @@ export const setOpenRouterKey = (key) => {
   }
 };
 
+import { buildMemoryContextPrompt, autoExtractMemoriesFromResponse, stripMemoryBlocks } from './memory';
+
 export const sendOpenRouterChat = async ({
   model = 'meta-llama/llama-3.3-70b-instruct:free',
   messages = [],
   temperature = 0.7,
   max_tokens = 1024,
-  apiKey = null
+  apiKey = null,
+  enableMemory = true
 }) => {
   const activeKey = apiKey || getOpenRouterKey();
 
@@ -218,12 +221,32 @@ export const sendOpenRouterChat = async ({
     headers['Authorization'] = `Bearer ${activeKey}`;
   }
 
+  // Inject Long-Term Memory
+  let enrichedMessages = [...messages];
+  if (enableMemory) {
+    const memoryPrompt = buildMemoryContextPrompt();
+    if (memoryPrompt) {
+      const systemIdx = enrichedMessages.findIndex((m) => m.role === 'system');
+      if (systemIdx >= 0) {
+        enrichedMessages[systemIdx] = {
+          role: 'system',
+          content: `${enrichedMessages[systemIdx].content}${memoryPrompt}`
+        };
+      } else {
+        enrichedMessages.unshift({
+          role: 'system',
+          content: `Sei un assistente AI intelligente e utile.${memoryPrompt}`
+        });
+      }
+    }
+  }
+
   try {
     const response = await axios.post(
       `${OPENROUTER_API_BASE}/chat/completions`,
       {
         model,
-        messages,
+        messages: enrichedMessages,
         temperature,
         max_tokens
       },
@@ -231,9 +254,21 @@ export const sendOpenRouterChat = async ({
     );
 
     if (response.data && response.data.choices && response.data.choices[0]) {
+      const rawContent = response.data.choices[0].message.content || '';
+      
+      // Auto-extract and save any memories learned by AI
+      let savedMemories = [];
+      if (enableMemory) {
+        savedMemories = autoExtractMemoriesFromResponse(rawContent);
+      }
+
+      const cleanContent = stripMemoryBlocks(rawContent);
+
       return {
         success: true,
-        content: response.data.choices[0].message.content,
+        content: cleanContent,
+        rawContent,
+        savedMemories,
         model: response.data.model || model,
         usage: response.data.usage || {}
       };
