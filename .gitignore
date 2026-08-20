@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Production output
+dist/
+frontend/dist/
+
+# Python & Backend
+__pycache__/
+*.pyc
+backend/__pycache__/
+.venv/
+venv/
+backend/session.json
+
+# Executables & Tunnels
+*.exe
+cloudflared.exe
+
+# Environment & Keys
+.env
+.env.local
+.env.*.local
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
