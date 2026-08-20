@@ -13,11 +13,13 @@ import {
   Download
 } from 'lucide-react';
 import { POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import ModelPickerModal from './ModelPickerModal';
 import { downloadJSONFile } from '../services/storage';
 import { useToast } from './Toast';
 
 export default function ChatbotModal({ bot, onClose }) {
   const { addToast } = useToast();
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -166,17 +168,14 @@ export default function ChatbotModal({ bot, onClose }) {
           <div className="flex items-center gap-2 text-slate-300">
             <Cpu className="w-4 h-4 text-purple-400" />
             <span className="text-slate-400">Modello:</span>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-500"
+            <span className="font-mono text-purple-300 font-bold">{selectedModel}</span>
+            <button
+              type="button"
+              onClick={() => setIsPickerOpen(true)}
+              className="ml-2 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 text-purple-300 hover:text-white font-semibold text-[11px] transition-colors"
             >
-              {POPULAR_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} {m.isFree ? '(FREE)' : ''}
-                </option>
-              ))}
-            </select>
+              Cambia (400+ Modelli) ↗
+            </button>
           </div>
 
           <span className="text-[10px] text-slate-500 italic hidden md:inline">
@@ -259,6 +258,17 @@ export default function ChatbotModal({ bot, onClose }) {
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 stroke-[2.5]" />}
           </button>
         </form>
+
+        {/* Model Picker Modal */}
+        <ModelPickerModal
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          selectedModelId={selectedModel}
+          onSelectModel={(modelId) => {
+            setSelectedModel(modelId);
+            addToast(`Modello attivo cambiato in: "${modelId}"`, 'success');
+          }}
+        />
       </div>
     </div>
   );

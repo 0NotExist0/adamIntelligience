@@ -9,6 +9,7 @@ import {
   Plus
 } from 'lucide-react';
 import { POPULAR_MODELS } from '../services/openrouter';
+import ModelPickerModal from './ModelPickerModal';
 import { useToast } from './Toast';
 import confetti from 'canvas-confetti';
 
@@ -16,6 +17,7 @@ export default function CreateModelModal({ isOpen, onClose, onModelCreated }) {
   const { addToast } = useToast();
   const [name, setName] = useState('');
   const [baseModel, setBaseModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('Sei un assistente AI specializzato, preciso ed efficiente. Rispondi sempre con spiegazioni chiare e codice pronto all\'uso.');
   const [temperature, setTemperature] = useState(0.7);
@@ -89,18 +91,27 @@ export default function CreateModelModal({ isOpen, onClose, onModelCreated }) {
           </div>
 
           <div className="space-y-1">
-            <label className="font-semibold text-slate-300">Modello Base OpenRouter</label>
-            <select
-              value={baseModel}
-              onChange={(e) => setBaseModel(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-500 shadow-inner"
-            >
-              {POPULAR_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} {m.isFree ? '(100% FREE)' : ''}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-slate-300">Modello Base OpenRouter</label>
+              <button
+                type="button"
+                onClick={() => setIsPickerOpen(true)}
+                className="text-purple-400 hover:text-purple-300 font-bold hover:underline"
+              >
+                Sfoglia 400+ Modelli (Free/Paid) ↗
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+              <span className="font-mono text-purple-300 font-bold">{baseModel}</span>
+              <button
+                type="button"
+                onClick={() => setIsPickerOpen(true)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 hover:text-white font-semibold text-[11px]"
+              >
+                Cambia Modello
+              </button>
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -171,6 +182,17 @@ export default function CreateModelModal({ isOpen, onClose, onModelCreated }) {
             Salva Modello per Google Drive
           </button>
         </form>
+
+        {/* Model Picker Modal */}
+        <ModelPickerModal
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          selectedModelId={baseModel}
+          onSelectModel={(modelId) => {
+            setBaseModel(modelId);
+            addToast(`Modello base impostato su: "${modelId}"`, 'success');
+          }}
+        />
       </div>
     </div>
   );

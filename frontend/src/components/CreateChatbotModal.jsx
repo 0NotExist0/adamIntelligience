@@ -11,6 +11,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { POPULAR_MODELS } from '../services/openrouter';
+import ModelPickerModal from './ModelPickerModal';
 import confetti from 'canvas-confetti';
 import { useToast } from './Toast';
 
@@ -18,6 +19,7 @@ export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }
   const { addToast } = useToast();
   const [step, setStep] = useState(1);
   const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [chatbotName, setChatbotName] = useState('');
   const [chatbotAvatar, setChatbotAvatar] = useState('🤖');
   const [chatbotTitle, setChatbotTitle] = useState('Assistente AI Intelligente');
@@ -90,7 +92,19 @@ export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }
         {step === 1 ? (
           /* STEP 1: MODEL SELECTION */
           <div className="py-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-300">Modelli Principali:</span>
+              <button
+                type="button"
+                onClick={() => setIsPickerOpen(true)}
+                className="text-xs text-purple-400 hover:text-purple-300 font-bold flex items-center gap-1.5 hover:underline"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Sfoglia tutti i 400+ Modelli OpenRouter ↗</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
               {POPULAR_MODELS.map((model) => {
                 const isSelected = selectedModel === model.id;
                 return (
@@ -108,8 +122,8 @@ export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }
                         <span className="text-[10px] font-bold text-purple-300 font-mono">
                           {model.provider}
                         </span>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${model.color}`}>
-                          {model.badge}
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${model.color || 'border-purple-500/30 text-purple-300'}`}>
+                          {model.badge || (model.isFree ? '100% FREE' : 'PRO')}
                         </span>
                       </div>
                       <h4 className="text-xs font-bold text-white">{model.name}</h4>
@@ -119,12 +133,27 @@ export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }
                     </div>
 
                     <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
-                      <span>{model.tag}</span>
+                      <span>{model.tag || model.id}</span>
                       {isSelected && <Check className="w-3.5 h-3.5 text-purple-400 stroke-[3]" />}
                     </div>
                   </div>
                 );
               })}
+            </div>
+
+            {/* Selected model preview bar */}
+            <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">Modello Selezionato:</span>
+                <span className="font-mono text-purple-300 font-bold">{selectedModel}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPickerOpen(true)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white font-semibold text-[11px]"
+              >
+                Cambia
+              </button>
             </div>
 
             <div className="pt-3 border-t border-slate-800 flex justify-end">
@@ -205,6 +234,16 @@ export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }
             </div>
           </form>
         )}
+        {/* Model Picker Modal */}
+        <ModelPickerModal
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          selectedModelId={selectedModel}
+          onSelectModel={(modelId) => {
+            setSelectedModel(modelId);
+            addToast(`Modello selezionato: "${modelId}"`, 'success');
+          }}
+        />
       </div>
     </div>
   );

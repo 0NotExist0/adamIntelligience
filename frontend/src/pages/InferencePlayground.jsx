@@ -10,15 +10,19 @@ import {
   Bot, 
   User, 
   Sliders, 
-  Cpu
+  Cpu,
+  Layers,
+  Gift
 } from 'lucide-react';
-import { POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import { CURATED_POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import ModelPickerModal from '../components/ModelPickerModal';
 import { useToast } from '../components/Toast';
 
 export default function InferencePlayground({ initialModel }) {
   const { addToast } = useToast();
   const [selectedModel, setSelectedModel] = useState(initialModel || 'meta-llama/llama-3.3-70b-instruct:free');
   const [customModel, setCustomModel] = useState('');
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -102,17 +106,25 @@ export default function InferencePlayground({ initialModel }) {
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-white">Playground AI OpenRouter</h1>
-            <p className="text-xs text-slate-400">Testa e confronta i migliori modelli LLM del mondo</p>
+            <p className="text-xs text-slate-400">Testa oltre 400 modelli divisi tra Gratuiti (FREE) e PRO a Pagamento</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsCatalogModalOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            <Layers className="w-3.5 h-3.5 text-purple-400" />
+            <span>Sfoglia Catalogo (400+ Modelli)</span>
+          </button>
+
           <button
             onClick={clearChat}
             className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Azzera Chat</span>
+            <span>Azzera</span>
           </button>
         </div>
       </div>
@@ -123,33 +135,45 @@ export default function InferencePlayground({ initialModel }) {
         <div className="glass-panel p-5 rounded-3xl border border-slate-800 flex flex-col justify-between space-y-6 overflow-y-auto">
           <div className="space-y-5">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-purple-400" />
-                <span>Seleziona Modello AI</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Cpu className="w-4 h-4 text-purple-400" />
+                  <span>Modello Attivo</span>
+                </label>
 
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-500 shadow-inner"
+                <button
+                  type="button"
+                  onClick={() => setIsCatalogModalOpen(true)}
+                  className="text-[11px] text-purple-400 hover:text-purple-300 hover:underline font-semibold"
+                >
+                  Cambia
+                </button>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-purple-300">
+                    {selectedModel.split('/')[0]}
+                  </span>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                    selectedModel.includes(':free') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  }`}>
+                    {selectedModel.includes(':free') ? '100% FREE' : 'PRO / Paid'}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-white truncate">
+                  {selectedModel.split('/')[1] || selectedModel}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCatalogModalOpen(true)}
+                className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
               >
-                {POPULAR_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {m.isFree ? '(FREE)' : ''}
-                  </option>
-                ))}
-                <option value="custom">✍️ Inserisci ID Personalizzato...</option>
-              </select>
-
-              {selectedModel === 'custom' && (
-                <input
-                  type="text"
-                  value={customModel}
-                  onChange={(e) => setCustomModel(e.target.value)}
-                  placeholder="es. mistralai/mistral-large-2411"
-                  className="w-full bg-slate-950 border border-purple-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono"
-                />
-              )}
+                <Layers className="w-3.5 h-3.5 text-purple-400" />
+                <span>Sfoglia 400+ Modelli Divisi</span>
+              </button>
             </div>
 
             {/* Hyperparameters Sliders */}
@@ -193,8 +217,9 @@ export default function InferencePlayground({ initialModel }) {
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 text-[11px] text-slate-400">
-            💡 Tutti i modelli con etichetta <strong>FREE</strong> non richiedono pagamenti e possono essere usati liberamente.
+          <div className="p-3 rounded-2xl bg-emerald-950/20 border border-emerald-500/20 text-[11px] text-emerald-300 flex items-center gap-2">
+            <Gift className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Tutti i modelli con etichetta <strong>FREE</strong> sono 100% gratuiti.</span>
           </div>
         </div>
 
@@ -282,6 +307,17 @@ export default function InferencePlayground({ initialModel }) {
           </form>
         </div>
       </div>
+
+      {/* Model Picker Modal */}
+      <ModelPickerModal
+        isOpen={isCatalogModalOpen}
+        onClose={() => setIsCatalogModalOpen(false)}
+        selectedModelId={selectedModel}
+        onSelectModel={(modelId) => {
+          setSelectedModel(modelId);
+          addToast(`Modello cambiato in "${modelId}"`, 'success');
+        }}
+      />
     </div>
   );
 }
