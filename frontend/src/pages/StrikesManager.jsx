@@ -30,12 +30,18 @@ import {
   Flame,
   Layers,
   HelpCircle,
-  RefreshCw
+  RefreshCw,
+  Compass,
+  Sliders,
+  Star,
+  Globe,
+  RotateCcw
 } from 'lucide-react';
 import { runAgentChatPipeline } from '../services/agentPipeline';
+import DestinationFilterDrawer, { REGIONAL_CAPITALS } from '../components/DestinationFilterDrawer';
 import { useToast } from '../components/Toast';
 
-// Database degli Scioperi per Tutte le Categorie
+// Database degli Scioperi con metadati geografici precisi (Regioni, Città, Capoluoghi, Hub)
 const INITIAL_STRIKES_DATA = [
   // --- TRENI & FERROVIE ---
   {
@@ -51,8 +57,13 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-09T21:00:00',
     duration: '24 Ore (dalle 21:00 alle 21:00)',
     scope: 'Nazionale',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Piemonte', 'Veneto', 'Campania', 'Toscana', 'Emilia-Romagna', 'Puglia', 'Sicilia', 'Liguria', 'Calabria', 'Marche', 'Friuli-Venezia Giulia', 'Abruzzo', 'Trentino-Alto Adige', 'Umbria', 'Sardegna', 'Basilicata', 'Molise', 'Valle d\'Aosta'],
+    cities: ['Roma', 'Milano', 'Napoli', 'Torino', 'Bologna', 'Firenze', 'Venezia', 'Verona', 'Bari', 'Palermo', 'Genova', 'Trieste', 'Reggio Calabria', 'Ancona', 'Pescara', 'Trento', 'Bolzano', 'Perugia', 'Cagliari', 'Salerno', 'Padova', 'Brescia'],
+    isCapoluogo: true,
+    majorHubs: ['Roma Termini', 'Roma Tiburtina', 'Milano Centrale', 'Milano Porta Garibaldi', 'Napoli Centrale', 'Torino Porta Nuova', 'Firenze Santa Maria Novella', 'Bologna Centrale', 'Venezia Mestre'],
     status: 'Confermato',
-    statusType: 'confirmed', // confirmed, imminent, in_progress, revoked
+    statusType: 'confirmed',
     impact: 'Alto',
     guaranteedSlots: 'Frecce e treni a lunga percorrenza garantiti. Treni regionali garantiti nelle fasce pendolari 06:00-09:00 e 18:00-21:00.',
     notes: 'Possibili variazioni o cancellazioni anche prima e dopo gli orari dello sciopero. Rimborso biglietti garantito prima della partenza.'
@@ -70,6 +81,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-22T17:00:00',
     duration: '8 Ore (dalle 09:01 alle 17:00)',
     scope: 'Regionale (Lombardia, Piemonte, Veneto)',
+    scopeType: 'Regionale',
+    regions: ['Lombardia', 'Piemonte', 'Veneto'],
+    cities: ['Milano', 'Torino', 'Venezia', 'Verona', 'Padova', 'Brescia', 'Bergamo', 'Monza', 'Novara', 'Alessandria', 'Vicenza', 'Treviso'],
+    isCapoluogo: true,
+    majorHubs: ['Milano Centrale', 'Torino Porta Nuova', 'Venezia Santa Lucia', 'Verona Porta Nuova'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Medio',
@@ -84,13 +100,18 @@ const INITIAL_STRIKES_DATA = [
     categoryName: 'Trasporto Locale (Bus/Metro)',
     icon: '🚌',
     title: 'Sciopero Generale Trasporto Pubblico Locale (Bus, Tram, Metro)',
-    companies: ['ATAC Roma', 'ATM Milano', 'ANM Napoli', 'GTT Torino', 'Tper Bologna'],
+    companies: ['ATAC Roma', 'ATM Milano', 'ANM Napoli', 'GTT Torino', 'Tper Bologna', 'Autolinee Toscane'],
     sectors: 'Autisti, macchinisti metro, personale di stazione e officine',
     unions: ['Filt-Cgil', 'Fit-Cisl', 'Uiltrasporti', 'Faisa Cisal', 'Ugl Fna'],
     startDate: '2026-03-13T00:00:00',
     endDate: '2026-03-13T23:59:00',
     duration: '24 Ore (con fasce di garanzia)',
     scope: 'Nazionale (Tutte le città metropolitane)',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Campania', 'Piemonte', 'Emilia-Romagna', 'Toscana', 'Veneto', 'Puglia', 'Sicilia', 'Liguria', 'Sardegna', 'Friuli-Venezia Giulia', 'Calabria', 'Marche', 'Abruzzo', 'Umbria'],
+    cities: ['Roma', 'Milano', 'Napoli', 'Torino', 'Bologna', 'Firenze', 'Genova', 'Bari', 'Palermo', 'Catania', 'Venezia', 'Verona', 'Cagliari', 'Trieste', 'Ancona', 'Perugia'],
+    isCapoluogo: true,
+    majorHubs: ['Metro A/B/C Roma', 'Metro M1/M2/M3/M4/M5 Milano', 'Metro Linea 1 Napoli', 'Metro Torino'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Alto',
@@ -102,14 +123,19 @@ const INITIAL_STRIKES_DATA = [
     category: 'tpl',
     categoryName: 'Trasporto Locale (Bus/Metro)',
     icon: '🚌',
-    title: 'Fermo Servizio Bus Extraurbani e Tram',
+    title: 'Fermo Servizio Bus Extraurbani e Ferrovie Concesse',
     companies: ['Autolinee Toscane', 'Cotral Lazio', 'EAV Campania'],
-    sectors: 'Linee bus extraurbane e ferrovie isolate',
+    sectors: 'Linee bus extraurbane e ferrovie isolate (Cumana, Circumvesuviana, Roma-Lido)',
     unions: ['USB Lavoro Privato'],
     startDate: '2026-03-27T08:30:00',
     endDate: '2026-03-27T12:30:00',
     duration: '4 Ore (dalle 08:30 alle 12:30)',
     scope: 'Regionale (Toscana, Lazio, Campania)',
+    scopeType: 'Regionale',
+    regions: ['Toscana', 'Lazio', 'Campania'],
+    cities: ['Firenze', 'Pisa', 'Livorno', 'Roma', 'Latina', 'Frosinone', 'Viterbo', 'Rieti', 'Napoli', 'Salerno', 'Caserta', 'Pozzuoli', 'Sorrento'],
+    isCapoluogo: true,
+    majorHubs: ['Terminal Bus Tiburtina', 'Stazione Montesanto Napoli', 'Terminal Santa Maria Novella Firenze'],
     status: 'Imminente',
     statusType: 'imminent',
     impact: 'Medio',
@@ -131,6 +157,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-18T17:00:00',
     duration: '4 Ore (dalle 13:00 alle 17:00)',
     scope: 'Nazionale (Tutti gli aeroporti italiani)',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Veneto', 'Campania', 'Sicilia', 'Toscana', 'Puglia', 'Emilia-Romagna', 'Piemonte', 'Sardegna', 'Calabria', 'Liguria', 'Friuli-Venezia Giulia', 'Abruzzo', 'Marche'],
+    cities: ['Roma', 'Milano', 'Venezia', 'Napoli', 'Catania', 'Palermo', 'Bologna', 'Firenze', 'Pisa', 'Bari', 'Torino', 'Cagliari', 'Verona', 'Lamezia Terme', 'Genova', 'Pescara', 'Ancona', 'Trieste', 'Olbia', 'Brindisi'],
+    isCapoluogo: true,
+    majorHubs: ['Roma Fiumicino (FCO)', 'Roma Ciampino (CIA)', 'Milano Malpensa (MXP)', 'Milano Linate (LIN)', 'Bergamo Orio al Serio (BGY)', 'Venezia Marco Polo (VCE)', 'Napoli Capodichino (NAP)', 'Catania Fontanarossa (CTA)', 'Palermo Falcone Borsellino (PMO)', 'Bologna Marconi (BLQ)'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Alto',
@@ -150,6 +181,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-04-03T23:59:00',
     duration: '24 Ore',
     scope: 'Interregionale (Roma FCO, Milano MXP/LIN)',
+    scopeType: 'Regionale',
+    regions: ['Lazio', 'Lombardia'],
+    cities: ['Roma', 'Fiumicino', 'Milano', 'Varese', 'Busto Arsizio', 'Monza'],
+    isCapoluogo: true,
+    majorHubs: ['Roma Fiumicino (FCO)', 'Milano Malpensa (MXP)', 'Milano Linate (LIN)'],
     status: 'In Programmazione',
     statusType: 'imminent',
     impact: 'Medio-Alto',
@@ -171,6 +207,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-25T23:59:00',
     duration: '24 Ore',
     scope: 'Nazionale',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Piemonte', 'Veneto', 'Campania', 'Emilia-Romagna', 'Toscana', 'Puglia', 'Sicilia', 'Liguria', 'Calabria', 'Sardegna', 'Marche', 'Abruzzo', 'Friuli-Venezia Giulia', 'Trentino-Alto Adige', 'Umbria', 'Basilicata', 'Molise', 'Valle d\'Aosta'],
+    cities: ['Roma', 'Milano', 'Napoli', 'Torino', 'Bologna', 'Firenze', 'Bari', 'Palermo', 'Genova', 'Venezia', 'Verona', 'Trieste', 'Cagliari', 'Catanzaro', 'Perugia', 'Ancona', 'L\'Aquila', 'Potenza', 'Campobasso', 'Trento'],
+    isCapoluogo: true,
+    majorHubs: ['Policlinico Umberto I Roma', 'Ospedale Niguarda Milano', 'Cardarelli Napoli', 'Molinette Torino', 'Sant\'Orsola Bologna', 'Careggi Firenze'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Molto Alto',
@@ -192,6 +233,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-10T23:59:00',
     duration: 'Intera Giornata',
     scope: 'Nazionale',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Campania', 'Sicilia', 'Veneto', 'Piemonte', 'Puglia', 'Emilia-Romagna', 'Toscana', 'Calabria', 'Sardegna', 'Liguria', 'Marche', 'Abruzzo', 'Friuli-Venezia Giulia', 'Trentino-Alto Adige', 'Umbria', 'Basilicata', 'Molise', 'Valle d\'Aosta'],
+    cities: ['Roma', 'Milano', 'Napoli', 'Torino', 'Palermo', 'Bari', 'Bologna', 'Firenze', 'Catania', 'Venezia', 'Genova', 'Messina', 'Padova', 'Trieste', 'Taranto', 'Brescia', 'Reggio Calabria', 'Modena', 'Cagliari', 'Perugia', 'Ancona'],
+    isCapoluogo: true,
+    majorHubs: ['Tutti i plessi scolastici e atenei universitari'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Medio',
@@ -213,6 +259,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-17T23:59:00',
     duration: '48 Ore',
     scope: 'Nazionale',
+    scopeType: 'Nazionale',
+    regions: ['Lombardia', 'Emilia-Romagna', 'Veneto', 'Lazio', 'Piemonte', 'Campania', 'Toscana', 'Puglia', 'Sicilia', 'Liguria', 'Friuli-Venezia Giulia', 'Marche', 'Abruzzo', 'Umbria', 'Calabria', 'Sardegna', 'Trentino-Alto Adige', 'Basilicata', 'Molise', 'Valle d\'Aosta'],
+    cities: ['Milano', 'Bologna', 'Piacenza', 'Verona', 'Roma', 'Torino', 'Napoli', 'Firenze', 'Bari', 'Padova', 'Novara', 'Parma', 'Reggio Emilia', 'Brescia', 'Bergamo'],
+    isCapoluogo: true,
+    majorHubs: ['Interporto Bologna', 'Polo Logistico Piacenza', 'Hub Malpensa Logistica', 'Interporto Quadrante Europa Verona', 'Polo Logistico Passo Corese Roma'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Medio',
@@ -232,6 +283,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-29T18:00:00',
     duration: '8 Ore',
     scope: 'Nazionale',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Toscana', 'Emilia-Romagna', 'Liguria', 'Campania', 'Veneto', 'Piemonte', 'Puglia', 'Marche', 'Abruzzo', 'Friuli-Venezia Giulia'],
+    cities: ['Roma', 'Milano', 'Firenze', 'Bologna', 'Genova', 'Napoli', 'Venezia', 'Torino', 'Bari', 'Ancona', 'Pescara', 'Trieste'],
+    isCapoluogo: true,
+    majorHubs: ['Autostrada A1 Milano-Napoli', 'A14 Bologna-Taranto', 'A4 Torino-Trieste', 'A10/A12 Liguria'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Basso-Medio',
@@ -253,6 +309,11 @@ const INITIAL_STRIKES_DATA = [
     endDate: '2026-03-08T23:59:00',
     duration: '24 Ore',
     scope: 'Nazionale (Giornata Internazionale)',
+    scopeType: 'Nazionale',
+    regions: ['Lazio', 'Lombardia', 'Campania', 'Piemonte', 'Veneto', 'Emilia-Romagna', 'Toscana', 'Puglia', 'Sicilia', 'Liguria', 'Sardegna', 'Calabria', 'Friuli-Venezia Giulia', 'Marche', 'Abruzzo', 'Trentino-Alto Adige', 'Umbria', 'Basilicata', 'Molise', 'Valle d\'Aosta'],
+    cities: ['Roma', 'Milano', 'Napoli', 'Torino', 'Palermo', 'Genova', 'Bologna', 'Firenze', 'Bari', 'Catania', 'Venezia', 'Verona', 'Trieste', 'Cagliari', 'Taranto', 'Brescia', 'Reggio Calabria', 'Modena', 'Perugia', 'Ancona', 'L\'Aquila', 'Trento', 'Bolzano', 'Potenza', 'Campobasso', 'Catanzaro', 'Aosta'],
+    isCapoluogo: true,
+    majorHubs: ['Piazze principali di tutte le città e capoluoghi italiani'],
     status: 'Confermato',
     statusType: 'confirmed',
     impact: 'Molto Alto',
@@ -280,6 +341,13 @@ export default function StrikesManager() {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedStrikeModal, setSelectedStrikeModal] = useState(null);
 
+  // Destination Filters Drawer State
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState('all');
+  const [selectedCity, setSelectedCity] = useState('all');
+  const [onlyCapitals, setOnlyCapitals] = useState(false);
+  const [scopeFilter, setScopeFilter] = useState('all'); // 'all', 'Nazionale', 'Regionale'
+
   // Auto-Switch configuration state
   const [isAutoSwitch, setIsAutoSwitch] = useState(true);
   const [switchIntervalSec, setSwitchIntervalSec] = useState(6);
@@ -287,10 +355,7 @@ export default function StrikesManager() {
   const [isAiVerifying, setIsAiVerifying] = useState(false);
   const [aiReport, setAiReport] = useState(null);
 
-  const autoSwitchTimerRef = useRef(null);
   const progressTimerRef = useRef(null);
-
-  // Filter categories list (excluding 'all' for rotation or including all)
   const rotationCategories = CATEGORIES.map((c) => c.id);
 
   // Handle Auto-Switch Rotation
@@ -312,7 +377,6 @@ export default function StrikesManager() {
       if (currentElapsed >= intervalMs) {
         currentElapsed = 0;
         setSwitchProgress(0);
-        // Switch to next category
         setActiveCategory((prevCat) => {
           const currentIndex = rotationCategories.indexOf(prevCat);
           const nextIndex = (currentIndex + 1) % rotationCategories.length;
@@ -326,10 +390,10 @@ export default function StrikesManager() {
     };
   }, [isAutoSwitch, switchIntervalSec]);
 
-  // Navigate manually
+  // Navigate categories manually
   const handleSelectCategory = (catId) => {
     setActiveCategory(catId);
-    setSwitchProgress(0); // reset progress on user click
+    setSwitchProgress(0);
   };
 
   const handleNextCategory = () => {
@@ -346,13 +410,28 @@ export default function StrikesManager() {
     setSwitchProgress(0);
   };
 
+  // Reset destination filters
+  const handleResetFilters = () => {
+    setSelectedRegion('all');
+    setSelectedCity('all');
+    setOnlyCapitals(false);
+    setScopeFilter('all');
+    addToast('Filtri territoriali azzerati', 'info');
+  };
+
   // AI Live Verification
   const handleVerifyWithAi = async () => {
     setIsAiVerifying(true);
     addToast('🤖 Agente AI: Ricerca sul Web e fact-checking scioperi in corso...', 'info');
 
     try {
-      const prompt = `Effettua un controllo aggiornato sugli scioperi in Italia per trasporti (treni, aerei, tpl), scuola, sanità e sciopero generale. Verifica le ultime date proclamate, fasce di garanzia e se ci sono revoche o conferme ufficiali.`;
+      const destinationClause = selectedCity && selectedCity !== 'all' 
+        ? `per la città di ${selectedCity} (${selectedRegion !== 'all' ? selectedRegion : 'Italia'})`
+        : selectedRegion && selectedRegion !== 'all' 
+        ? `per la regione ${selectedRegion}`
+        : `in tutta Italia`;
+
+      const prompt = `Effettua un controllo aggiornato sugli scioperi ${destinationClause} per tutte le categorie (trasporti, treni, aerei, tpl, scuola, sanità e sciopero generale). Verifica le ultime date proclamate, fasce di garanzia, e se ci sono revoche o conferme ufficiali.`;
       
       const res = await runAgentChatPipeline({
         prompt,
@@ -377,22 +456,69 @@ export default function StrikesManager() {
     }
   };
 
-  // Filter strikes
+  // Enhanced Filter Logic with Geographical Region, City & Capital filters
   const filteredStrikes = strikes.filter((s) => {
     const matchCategory = activeCategory === 'all' || s.category === activeCategory;
     const matchStatus = selectedStatus === 'all' || s.statusType === selectedStatus;
+    
+    // Scope filter (Nazionale vs Regionale)
+    const matchScope = scopeFilter === 'all' || 
+      (scopeFilter === 'Nazionale' && s.scopeType === 'Nazionale') ||
+      (scopeFilter === 'Regionale' && s.scopeType === 'Regionale');
+
+    // Region filter
+    const matchRegion = !selectedRegion || selectedRegion === 'all' || 
+      (s.regions && (s.regions.includes(selectedRegion) || s.scopeType === 'Nazionale'));
+
+    // City filter
+    const matchCity = !selectedCity || selectedCity === 'all' || 
+      (s.cities && (s.cities.some((c) => c.toLowerCase() === selectedCity.toLowerCase()) || s.scopeType === 'Nazionale'));
+
+    // Only Regional Capitals filter
+    const matchCapitals = !onlyCapitals || s.isCapoluogo === true ||
+      (s.cities && s.cities.some((c) => REGIONAL_CAPITALS.includes(c)));
+
+    // Text search query
     const matchQuery = 
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.scope.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.regions && s.regions.some((r) => r.toLowerCase().includes(searchQuery.toLowerCase()))) ||
+      (s.cities && s.cities.some((c) => c.toLowerCase().includes(searchQuery.toLowerCase()))) ||
       s.companies.some((c) => c.toLowerCase().includes(searchQuery.toLowerCase())) ||
       s.unions.some((u) => u.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchCategory && matchStatus && matchQuery;
+
+    return matchCategory && matchStatus && matchScope && matchRegion && matchCity && matchCapitals && matchQuery;
   });
 
   const activeCategoryObj = CATEGORIES.find((c) => c.id === activeCategory) || CATEGORIES[0];
+  
+  const activeFiltersCount = (selectedRegion && selectedRegion !== 'all' ? 1 : 0) +
+                             (selectedCity && selectedCity !== 'all' ? 1 : 0) +
+                             (onlyCapitals ? 1 : 0) +
+                             (scopeFilter && scopeFilter !== 'all' ? 1 : 0);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300 relative">
+      
+      {/* Floating Side Button for Destination Filters on Large Screens */}
+      <button
+        onClick={() => setIsFilterDrawerOpen(true)}
+        className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-gradient-to-l from-purple-600 to-indigo-600 text-white p-3.5 rounded-l-2xl shadow-2xl shadow-purple-500/40 border-l border-y border-purple-400/40 hover:pl-5 transition-all flex flex-col items-center gap-1.5 group active:scale-95"
+        title="Apri menu filtri destinazioni (Regioni, Città, Capoluoghi)"
+      >
+        <div className="relative">
+          <MapPin className="w-5 h-5 group-hover:scale-110 transition-transform text-rose-300" />
+          {activeFiltersCount > 0 && (
+            <span className="absolute -top-2 -right-2 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border border-white">
+              {activeFiltersCount}
+            </span>
+          )}
+        </div>
+        <span className="text-[10px] font-bold tracking-tight uppercase [writing-mode:vertical-lr] rotate-180 py-1">
+          Filtri Destinazioni
+        </span>
+      </button>
+
       {/* Top Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
@@ -408,13 +534,36 @@ export default function StrikesManager() {
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Calendario in tempo reale di tutte le categorie con auto-switch dinamico e fact-checking AI
+              Calendario in tempo reale per tutte le categorie con auto-switch dinamico, filtri regionali/città e fact-checking AI
             </p>
           </div>
         </div>
 
-        {/* Live Controls: Auto-Switch & AI Check */}
+        {/* Live Controls: Filter Menu Drawer Button, Auto-Switch & AI Check */}
         <div className="flex flex-wrap items-center gap-2.5">
+          
+          {/* Side Drawer Filter Trigger Button */}
+          <button
+            onClick={() => setIsFilterDrawerOpen(true)}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all shadow-md active:scale-95 ${
+              activeFiltersCount > 0
+                ? 'bg-purple-600 text-white border-purple-400/50 shadow-purple-500/25'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
+            }`}
+          >
+            <MapPin className="w-4 h-4 text-rose-400" />
+            <span>Filtra Destinazioni</span>
+            {activeFiltersCount > 0 ? (
+              <span className="bg-white text-purple-900 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                {activeFiltersCount}
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded-md">
+                Regioni/Città
+              </span>
+            )}
+          </button>
+
           {/* Auto-Switch Controls Card */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-md">
             <div className="flex items-center gap-1.5">
@@ -428,7 +577,7 @@ export default function StrikesManager() {
                 title={isAutoSwitch ? 'Metti in pausa Auto-Switch' : 'Attiva rotazione automatica delle categorie'}
               >
                 {isAutoSwitch ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{isAutoSwitch ? 'Auto-Switch Attivo' : 'Auto-Switch In Pausa'}</span>
+                <span className="hidden sm:inline">{isAutoSwitch ? 'Auto-Switch Attivo' : 'In Pausa'}</span>
               </button>
             </div>
 
@@ -471,7 +620,7 @@ export default function StrikesManager() {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:opacity-95 text-white text-xs font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30 transition-all active:scale-95 disabled:opacity-50"
           >
             <Sparkles className={`w-3.5 h-3.5 ${isAiVerifying ? 'animate-spin' : 'animate-pulse text-pink-200'}`} />
-            <span>{isAiVerifying ? 'Ricerca Web AI...' : 'Verifica Live con Agente Web'}</span>
+            <span>{isAiVerifying ? 'Ricerca Web AI...' : 'Verifica Live Web'}</span>
           </button>
         </div>
       </div>
@@ -486,8 +635,8 @@ export default function StrikesManager() {
             />
           </div>
           <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono px-1">
-            <span>Rotazione automatica tra le 8 categorie</span>
-            <span>Passaggio al prossimo tab tra {Math.ceil(switchIntervalSec * (1 - switchProgress / 100))}s</span>
+            <span>Rotazione automatica attiva su 8 categorie</span>
+            <span>Prossima categoria tra {Math.ceil(switchIntervalSec * (1 - switchProgress / 100))}s</span>
           </div>
         </div>
       )}
@@ -519,6 +668,62 @@ export default function StrikesManager() {
         })}
       </div>
 
+      {/* Active Destination Filters Bar */}
+      {activeFiltersCount > 0 && (
+        <div className="p-3 rounded-2xl bg-purple-950/30 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2.5 text-xs animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold text-purple-300 flex items-center gap-1">
+              <Sliders className="w-3.5 h-3.5 text-purple-400" />
+              <span>Filtri Territoriali Attivi:</span>
+            </span>
+
+            {/* Scope Pill */}
+            {scopeFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-xl text-purple-200 text-[11px]">
+                <Globe className="w-3 h-3 text-purple-400" />
+                <span>Ambito: <strong>{scopeFilter}</strong></span>
+                <button onClick={() => setScopeFilter('all')} className="text-slate-400 hover:text-white">✕</button>
+              </span>
+            )}
+
+            {/* Region Pill */}
+            {selectedRegion && selectedRegion !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 bg-cyan-950/50 border border-cyan-500/40 px-2.5 py-1 rounded-xl text-cyan-200 text-[11px]">
+                <Compass className="w-3 h-3 text-cyan-400" />
+                <span>Regione: <strong>{selectedRegion}</strong></span>
+                <button onClick={() => setSelectedRegion('all')} className="text-slate-400 hover:text-white">✕</button>
+              </span>
+            )}
+
+            {/* City Pill */}
+            {selectedCity && selectedCity !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 bg-rose-950/50 border border-rose-500/40 px-2.5 py-1 rounded-xl text-rose-200 text-[11px]">
+                <MapPin className="w-3 h-3 text-rose-400" />
+                <span>Città: <strong>{selectedCity}</strong></span>
+                <button onClick={() => setSelectedCity('all')} className="text-slate-400 hover:text-white">✕</button>
+              </span>
+            )}
+
+            {/* Only Capitals Pill */}
+            {onlyCapitals && (
+              <span className="inline-flex items-center gap-1.5 bg-amber-950/50 border border-amber-500/40 px-2.5 py-1 rounded-xl text-amber-200 text-[11px]">
+                <Star className="w-3 h-3 text-amber-400" />
+                <span>Solo Capoluoghi</span>
+                <button onClick={() => setOnlyCapitals(false)} className="text-slate-400 hover:text-white">✕</button>
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={handleResetFilters}
+            className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 hover:underline"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Azzera Filtri</span>
+          </button>
+        </div>
+      )}
+
       {/* AI Report Card if available */}
       {aiReport && (
         <div className="p-4 rounded-3xl bg-slate-900/90 border border-purple-500/40 shadow-xl space-y-3 animate-in fade-in duration-200">
@@ -540,7 +745,7 @@ export default function StrikesManager() {
         </div>
       )}
 
-      {/* Search & Status Filters */}
+      {/* Search Bar & Status Filter */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-800/80">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
@@ -554,6 +759,15 @@ export default function StrikesManager() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* Quick Drawer Button on Filter Bar */}
+          <button
+            onClick={() => setIsFilterDrawerOpen(true)}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-purple-300 text-xs font-semibold transition-colors shrink-0"
+          >
+            <Compass className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Scegli Regione/Città</span>
+          </button>
+
           <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <select
             value={selectedStatus}
@@ -579,22 +793,33 @@ export default function StrikesManager() {
           </h2>
         </div>
 
-        <span className="text-xs text-slate-400 font-mono">
+        <span className="text-xs text-slate-400 font-mono hidden sm:inline">
           Fasce di garanzia tutelate per legge ex L. 146/90
         </span>
       </div>
 
       {/* Strikes Grid */}
       {filteredStrikes.length === 0 ? (
-        <div className="h-64 glass-panel rounded-3xl border border-slate-800 flex flex-col items-center justify-center space-y-2 text-slate-500 text-center">
-          <CheckCircle2 className="w-10 h-10 text-emerald-400/50" />
-          <p className="text-sm font-semibold text-slate-300">Nessuno sciopero trovato per i filtri selezionati</p>
-          <p className="text-xs text-slate-500">I servizi per questa categoria risultano regolari.</p>
+        <div className="h-64 glass-panel rounded-3xl border border-slate-800 flex flex-col items-center justify-center space-y-3 text-slate-500 text-center p-6">
+          <CheckCircle2 className="w-12 h-12 text-emerald-400/50" />
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-200">Nessuno sciopero trovato per la destinazione selezionata</p>
+            <p className="text-xs text-slate-400 max-w-md">
+              I servizi per questa categoria e area territoriale risultano regolari. Prova a modificare o azzerare i filtri di regione/città.
+            </p>
+          </div>
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={handleResetFilters}
+              className="px-4 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold transition-all"
+            >
+              Azzera Filtri Territoriali
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredStrikes.map((strike) => {
-            const isHighImpact = strike.impact === 'Alto' || strike.impact === 'Molto Alto';
             return (
               <div
                 key={strike.id}
@@ -612,9 +837,9 @@ export default function StrikesManager() {
                         <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider block">
                           {strike.categoryName}
                         </span>
-                        <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-rose-400" />
-                          {strike.scope}
+                        <span className="text-[11px] text-slate-300 font-semibold flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                          <span className="truncate max-w-[140px]">{strike.scope}</span>
                         </span>
                       </div>
                     </div>
@@ -648,6 +873,16 @@ export default function StrikesManager() {
                     </div>
                   </div>
 
+                  {/* Geographical Targets Badge */}
+                  {strike.cities && (
+                    <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/60 text-[10px] text-slate-300 flex items-center gap-1.5">
+                      <Building2 className="w-3 h-3 text-cyan-400 shrink-0" />
+                      <span className="truncate">
+                        <strong>Destinazioni:</strong> {strike.cities.slice(0, 4).join(', ')}{strike.cities.length > 4 ? ` + altri ${strike.cities.length - 4}` : ''}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Companies & Sectors */}
                   <div className="space-y-1 text-[11px]">
                     <div className="flex items-center gap-1.5 text-slate-400">
@@ -679,6 +914,22 @@ export default function StrikesManager() {
           })}
         </div>
       )}
+
+      {/* Destination Filter Side Drawer */}
+      <DestinationFilterDrawer
+        isOpen={isFilterDrawerOpen}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        selectedRegion={selectedRegion}
+        setSelectedRegion={setSelectedRegion}
+        selectedCity={selectedCity}
+        setSelectedCity={setSelectedCity}
+        onlyCapitals={onlyCapitals}
+        setOnlyCapitals={setOnlyCapitals}
+        scopeFilter={scopeFilter}
+        setScopeFilter={setScopeFilter}
+        onResetFilters={handleResetFilters}
+        totalMatchingStrikes={filteredStrikes.length}
+      />
 
       {/* Modal Strike Details */}
       {selectedStrikeModal && (
@@ -725,6 +976,23 @@ export default function StrikesManager() {
                 <p className="font-semibold text-rose-400">{selectedStrikeModal.impact}</p>
               </div>
             </div>
+
+            {/* Regions and Cities Involved */}
+            {selectedStrikeModal.cities && (
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs space-y-2">
+                <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Destinazioni, Città e Capoluoghi Impattati:</span>
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {selectedStrikeModal.cities.map((c) => (
+                    <span key={c} className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono">
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Guaranteed Slots */}
             <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-1.5 text-xs text-emerald-200">
