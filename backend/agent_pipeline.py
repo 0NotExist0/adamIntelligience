@@ -47,7 +47,7 @@ class AgentPipeline:
         is_factual = any(k in lower_p for k in ["chi è", "cosa è", "quando", "dove", "notizie", "chi ha vinto", "versione", "prezzo", "meteo", "anno"])
 
         fallback_temp = 0.2 if (is_code or is_math or is_factual) else (0.8 if is_creative else 0.5)
-        fallback_tokens = 2048 if (is_code or "dettagliat" in lower_p) else (512 if len(prompt) < 40 else 1024)
+        fallback_tokens = 8192
         fallback_web = is_factual or any(k in lower_p for k in ["ultim", "oggi", "2026", "2025", "2024", "attual", "news", "cerca", "trova"])
         
         fallback_meta = {

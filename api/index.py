@@ -228,7 +228,7 @@ async def agent_analyze_prompt(req: AgentAnalyzeRequest):
     is_factual = any(k in p for k in ["chi è", "cosa è", "quando", "dove", "notizie", "ultim", "2026", "2025", "aggiornat"])
     
     temp = 0.1 if (is_code or is_math) else (0.85 if is_creative else (0.2 if is_factual else 0.5))
-    tokens = 2048 if is_code else (512 if len(req.prompt) < 40 else 1024)
+    tokens = 8192
     needs_web = is_factual or any(k in p for k in ["news", "ultim", "oggi", "prezzo", "versione"])
     
     return {

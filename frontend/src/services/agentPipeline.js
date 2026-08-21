@@ -9,7 +9,7 @@ Il tuo compito è analizzare il prompt dell'utente e determinare:
    - 0.0 - 0.2: per codice, matematica, formule, query fattuali rigide, traduzioni esatte (massima determinazione e precisione).
    - 0.3 - 0.6: per spiegazioni tecniche, sintesi, consigli strutturati.
    - 0.7 - 0.9: per brainstorming, scrittura creativa, storytelling.
-3. "max_tokens": Numero intero di token sufficienti ma non sprecati (es. 400 per risposte brevi, 1200 per medie, 2500 per codice esteso o trattati).
+3. "max_tokens": Numero intero generoso di token per NON tagliare MAI la risposta (default 4096 - 8192, fino a 16384 per codice complesso, trattati o analisi dettagliate).
 4. "needs_web_search": true se la domanda richiede fatti recenti, dati esterni verificabili, notizie o confronto oggettivo sul web, altrimenti false.
 5. "search_query": Stringa con parole chiave pulite per il motore di ricerca (oppure stringa vuota).
 6. "reasoning_strategy": Breve frase (1 riga) sulla strategia logica da seguire per una risposta priva di dubbi.
@@ -19,7 +19,7 @@ Rispondi ESCLUSIVAMENTE con un blocco JSON valido:
 {
   "task_type": "...",
   "temperature": 0.2,
-  "max_tokens": 1200,
+  "max_tokens": 8192,
   "needs_web_search": true,
   "search_query": "...",
   "reasoning_strategy": "..."
@@ -41,30 +41,26 @@ export const analyzePromptHeuristically = (prompt) => {
 
   let task_type = 'general_qa';
   let temperature = 0.5;
-  let max_tokens = 1024;
+  let max_tokens = 8192; // Generous default to avoid truncation
   let needs_web_search = false;
 
   if (isCode) {
     task_type = 'code';
     temperature = 0.1;
-    max_tokens = 2048;
+    max_tokens = 8192;
   } else if (isMath) {
     task_type = 'math_logic';
     temperature = 0.0;
-    max_tokens = 1024;
+    max_tokens = 4096;
   } else if (isCreative) {
     task_type = 'creative_writing';
     temperature = 0.85;
-    max_tokens = 1500;
+    max_tokens = 8192;
   } else if (isFactual || hasRecentKeywords) {
     task_type = 'factual_query';
     temperature = 0.2;
-    max_tokens = 1024;
+    max_tokens = 6144;
     needs_web_search = true;
-  }
-
-  if (p.length < 35 && !isCode) {
-    max_tokens = Math.min(max_tokens, 512);
   }
 
   // Clean search query
@@ -96,22 +92,25 @@ export const runMetaPromptAnalysis = async (prompt) => {
   try {
     const res = await axios.post('/api/agent/analyze-prompt', { prompt }, { timeout: 3500 });
     if (res.data && typeof res.data.temperature === 'number') {
-      return res.data;
+      return {
+        ...res.data,
+        max_tokens: Math.max(4096, res.data.max_tokens || 8192)
+      };
     }
   } catch (e) {
     // backend offline or on static host
   }
 
-  // 2. Try OpenRouter with ultra-fast Gemini 2.0 Flash / Llama 3.3
+  // 2. Try OpenRouter with auto free router
   try {
     const aiRes = await sendOpenRouterChat({
-      model: 'google/gemini-2.0-flash-exp:free',
+      model: 'openrouter/free',
       messages: [
         { role: 'system', content: META_ANALYZER_PROMPT },
         { role: 'user', content: `Prompt: "${prompt}"` }
       ],
       temperature: 0.1,
-      max_tokens: 300,
+      max_tokens: 500,
       enableMemory: false
     });
 
@@ -122,7 +121,7 @@ export const runMetaPromptAnalysis = async (prompt) => {
         return {
           task_type: parsed.task_type || 'general_qa',
           temperature: Math.max(0, Math.min(1.0, parsed.temperature)),
-          max_tokens: Math.max(128, Math.min(4096, parsed.max_tokens || 1024)),
+          max_tokens: Math.max(4096, Math.min(16384, parsed.max_tokens || 8192)),
           needs_web_search: Boolean(parsed.needs_web_search),
           search_query: (parsed.search_query || prompt).trim(),
           reasoning_strategy: parsed.reasoning_strategy || 'Analisi logica step-by-step'

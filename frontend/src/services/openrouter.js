@@ -237,7 +237,7 @@ export const sendOpenRouterChat = async ({
   model = 'openrouter/free',
   messages = [],
   temperature = 0.7,
-  max_tokens = 1024,
+  max_tokens = 8192,
   apiKey = null,
   enableMemory = true,
   allowFallback = true
@@ -282,15 +282,19 @@ export const sendOpenRouterChat = async ({
   }
 
   const executeRequest = async (targetModel) => {
+    const payload = {
+      model: targetModel,
+      messages: enrichedMessages,
+      temperature
+    };
+    if (max_tokens && max_tokens > 0) {
+      payload.max_tokens = max_tokens;
+    }
+
     return await axios.post(
       `${OPENROUTER_API_BASE}/chat/completions`,
-      {
-        model: targetModel,
-        messages: enrichedMessages,
-        temperature,
-        max_tokens
-      },
-      { headers, timeout: 60000 }
+      payload,
+      { headers, timeout: 90000 }
     );
   };
 

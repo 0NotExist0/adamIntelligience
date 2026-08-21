@@ -53,7 +53,7 @@ export default function InferencePlayground({ initialModel }) {
   const [forceWebSearch, setForceWebSearch] = useState(false);
   const [currentPipelineStep, setCurrentPipelineStep] = useState(null);
   const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(1024);
+  const [maxTokens, setMaxTokens] = useState(8192);
   const [copiedIndex, setCopiedIndex] = useState(null);
 
   const handleSendMessage = async (e) => {
@@ -321,18 +321,23 @@ export default function InferencePlayground({ initialModel }) {
 
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Max Tokens</span>
+                    <span className="text-slate-400">Max Tokens (Lunghezza Risposta)</span>
                     <span className="font-mono text-purple-300 font-bold">{maxTokens}</span>
                   </div>
                   <input
                     type="range"
-                    min="128"
-                    max="2048"
-                    step="64"
+                    min="512"
+                    max="16384"
+                    step="512"
                     value={maxTokens}
                     onChange={(e) => setMaxTokens(parseInt(e.target.value))}
                     className="w-full accent-purple-500 cursor-pointer"
                   />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                    <span>512</span>
+                    <span>8192 (Default)</span>
+                    <span>16384 (Massimo)</span>
+                  </div>
                 </div>
               </div>
             )}
