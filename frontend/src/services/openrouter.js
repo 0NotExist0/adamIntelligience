@@ -3,65 +3,85 @@ import axios from 'axios';
 const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
 
 export const CURATED_POPULAR_MODELS = [
-  // 100% FREE ACTIVE MODELS
+  // 100% FREE VERIFIED ACTIVE OPENROUTER MODELS
   {
-    id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Google Gemini 2.0 Flash',
-    provider: 'Google',
+    id: 'openrouter/free',
+    name: 'OpenRouter Free Auto-Router',
+    provider: 'OpenRouter',
     isFree: true,
-    tag: 'Consigliato • Ultra Veloce • Finestra 1M',
-    desc: 'Modello di ultimissima generazione Google con velocità in tempo reale e 1M token di contesto.',
-    context_length: 1048576,
+    tag: '100% Uptime • Smart Auto Fallback',
+    desc: 'Router intelligente di OpenRouter che instrada automaticamente verso i modelli gratuiti attualmente online con zero tempi di inattività.',
+    context_length: 131072,
     pricing: { prompt: '0', completion: '0' }
   },
   {
-    id: 'deepseek/deepseek-r1:free',
-    name: 'DeepSeek R1 Reasoning',
-    provider: 'DeepSeek',
+    id: 'google/gemma-4-31b-it:free',
+    name: 'Google Gemma 4 31B IT',
+    provider: 'Google',
     isFree: true,
-    tag: 'Top Reasoning • Logica & Problem Solving',
-    desc: 'Specializzato in ragionamento profondo, step-by-step thinking e deduzione logico-matematica.',
+    tag: 'Top Google Free • Alta Precisione',
+    desc: 'Nuovissimo modello Google con eccellenti capacità di conversazione e ragionamento.',
+    context_length: 131072,
+    pricing: { prompt: '0', completion: '0' }
+  },
+  {
+    id: 'nvidia/nemotron-3.5-lightning:free',
+    name: 'NVIDIA Nemotron 3.5 Lightning',
+    provider: 'NVIDIA',
+    isFree: true,
+    tag: 'Ultra Rapido • NVIDIA AI',
+    desc: 'Velocità fulminea ed eccellente sintesi per risposte immediate.',
     context_length: 65536,
     pricing: { prompt: '0', completion: '0' }
   },
   {
-    id: 'qwen/qwen-2.5-coder-32b-instruct:free',
-    name: 'Qwen 2.5 Coder 32B',
-    provider: 'Alibaba Qwen',
+    id: 'cohere/north-mini-code:free',
+    name: 'Cohere North Mini Code',
+    provider: 'Cohere',
     isFree: true,
     tag: 'Coding & Dev Specialist',
-    desc: 'Il miglior modello per programmazione, refactoring Python, JavaScript, React e architetture cloud.',
+    desc: 'Specializzato nella scrittura, spiegazione e correzione di codice Python, JavaScript, React e script.',
     context_length: 32768,
     pricing: { prompt: '0', completion: '0' }
   },
   {
-    id: 'mistralai/mistral-7b-instruct:free',
-    name: 'Mistral 7B Instruct',
-    provider: 'Mistral AI',
+    id: 'z-ai/glm-5.2:free',
+    name: 'Z.ai GLM 5.2',
+    provider: 'Z.ai',
     isFree: true,
-    tag: 'Leggero & Versatile',
-    desc: 'Modello versatile per risposte sintetiche e compiti di conversazione quotidiani.',
-    context_length: 32768,
+    tag: 'Multitasking & Logica',
+    desc: 'Modello performante per dialoghi articolati, traduzioni e logica.',
+    context_length: 65536,
     pricing: { prompt: '0', completion: '0' }
   },
   {
-    id: 'google/gemini-flash-1.5-8b:free',
-    name: 'Google Gemini Flash 1.5 8B',
+    id: 'google/gemma-4-26b-a4b-it:free',
+    name: 'Google Gemma 4 26B A4B',
     provider: 'Google',
     isFree: true,
-    tag: 'Snello & Istantaneo',
-    desc: 'Modello ultrarapido ideale per compiti frequenti e massima velocità di generazione.',
-    context_length: 1000000,
+    tag: 'Google Gemma Free',
+    desc: 'Modello compatto e potente per chat e compiti generali quotidiani.',
+    context_length: 131072,
     pricing: { prompt: '0', completion: '0' }
   },
   {
-    id: 'meta-llama/llama-3.1-8b-instruct:free',
-    name: 'Meta Llama 3.1 8B Instruct',
-    provider: 'Meta',
+    id: 'openai/gpt-oss-20b:free',
+    name: 'OpenAI GPT-OSS 20B',
+    provider: 'OpenAI',
     isFree: true,
-    tag: 'Meta Llama Free',
-    desc: 'Modello compatto e affidabile di Meta per chat ed elaborazione testi.',
-    context_length: 131072,
+    tag: 'Open Source',
+    desc: 'Modello open weights versatile per compiti generali e generazione testi.',
+    context_length: 32768,
+    pricing: { prompt: '0', completion: '0' }
+  },
+  {
+    id: 'liquid/lfm-2.5-2.6b:free',
+    name: 'LiquidAI LFM 2.5',
+    provider: 'LiquidAI',
+    isFree: true,
+    tag: 'Snello & Istantaneo',
+    desc: 'Architettura snella e istantanea per compiti veloci.',
+    context_length: 32768,
     pricing: { prompt: '0', completion: '0' }
   },
 
@@ -201,17 +221,20 @@ export const setOpenRouterKey = (key) => {
 
 import { buildMemoryContextPrompt, autoExtractMemoriesFromResponse, stripMemoryBlocks } from './memory';
 
-// List of top reliable free fallback models in priority order
+// List of top verified active free fallback models in priority order
 const RELIABLE_FREE_FALLBACKS = [
-  'google/gemini-2.0-flash-exp:free',
-  'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-coder-32b-instruct:free',
-  'mistralai/mistral-7b-instruct:free',
-  'google/gemini-flash-1.5-8b:free'
+  'openrouter/free',
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'cohere/north-mini-code:free',
+  'z-ai/glm-5.2:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'openai/gpt-oss-20b:free',
+  'liquid/lfm-2.5-2.6b:free'
 ];
 
 export const sendOpenRouterChat = async ({
-  model = 'google/gemini-2.0-flash-exp:free',
+  model = 'openrouter/free',
   messages = [],
   temperature = 0.7,
   max_tokens = 1024,
@@ -272,11 +295,15 @@ export const sendOpenRouterChat = async ({
   };
 
   try {
-    let currentModel = model || 'google/gemini-2.0-flash-exp:free';
+    let currentModel = model || 'openrouter/free';
     
-    // Automatically sanitize deprecated model slugs
-    if (currentModel.includes('llama-3.3-70b-instruct:free') || currentModel.includes('llama-3.3-70b:free')) {
-      currentModel = 'google/gemini-2.0-flash-exp:free';
+    // Automatically sanitize deprecated or decommissioned model slugs
+    if (
+      currentModel.includes('llama-3.3-70b-instruct:free') || 
+      currentModel.includes('gemini-flash-1.5-8b:free') ||
+      currentModel.includes('gemini-2.0-flash-exp:free')
+    ) {
+      currentModel = 'openrouter/free';
     }
 
     let response = null;
@@ -294,9 +321,12 @@ export const sendOpenRouterChat = async ({
       } catch (reqErr) {
         lastError = reqErr;
         const errMsg = reqErr.response?.data?.error?.message || reqErr.message || '';
-        const isFallbackable = errMsg.toLowerCase().includes('unavailable for free') || 
+        const isFallbackable = errMsg.toLowerCase().includes('no endpoints found') ||
+                              errMsg.toLowerCase().includes('unavailable for free') || 
                               errMsg.toLowerCase().includes('use this slug instead') ||
+                              errMsg.toLowerCase().includes('not found') ||
                               errMsg.toLowerCase().includes('rate limit') ||
+                              errMsg.toLowerCase().includes('temporarily unavailable') ||
                               reqErr.response?.status === 404 ||
                               reqErr.response?.status === 400 ||
                               reqErr.response?.status === 429;
@@ -304,7 +334,7 @@ export const sendOpenRouterChat = async ({
         if (!allowFallback || !isFallbackable) {
           break; // Stop immediately for auth/key errors (401)
         }
-        console.warn(`[OpenRouter Fallback] Il modello "${targetModel}" non è disponibile. Tentativo con fallback...`);
+        console.warn(`[OpenRouter Fallback] Il modello "${targetModel}" non è al momento online. Tentativo con fallback automatico...`);
       }
     }
 

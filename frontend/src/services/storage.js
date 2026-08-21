@@ -11,10 +11,10 @@ const DEFAULT_MODELS = [
   {
     id: 'model-adam-core',
     name: 'Adam AI Assistant v1.0',
-    baseModel: 'google/gemini-2.0-flash-exp:free',
+    baseModel: 'openrouter/free',
     description: 'Assistente AI generale ottimizzato per produttività, analisi e problem solving in italiano.',
     systemPrompt: 'Sei Adam, un assistente AI avanzato, brillante, preciso e amichevole. Rispondi con grande chiarezza, formattando in Markdown ed evidenziando i punti chiave.',
-    tags: ['Gemini 2.0', 'General', 'Italiano'],
+    tags: ['OpenRouter Free', 'General', 'Italiano'],
     temperature: 0.7,
     maxTokens: 1024,
     createdAt: '2026-08-20T10:00:00Z',
@@ -24,10 +24,10 @@ const DEFAULT_MODELS = [
   {
     id: 'model-dev-expert',
     name: 'Python & React Code Master',
-    baseModel: 'qwen/qwen-2.5-coder-32b-instruct:free',
+    baseModel: 'cohere/north-mini-code:free',
     description: 'Esperto di programmazione Fullstack: React 19, Vite, Tailwind CSS, Python FastAPI e architetture cloud.',
     systemPrompt: 'Sei un Senior Software Architect specializzato in Python, React, Tailwind CSS e modern web engineering. Fornisci sempre codice pulito, modulare e pronto all\'uso.',
-    tags: ['Qwen Coder', 'Python', 'React', 'Dev'],
+    tags: ['Code Master', 'Python', 'React', 'Dev'],
     temperature: 0.3,
     maxTokens: 2048,
     createdAt: '2026-08-20T12:00:00Z',
@@ -41,7 +41,7 @@ const DEFAULT_CHATBOTS = [
     id: 'bot-adam',
     name: 'Adam Chatbot',
     avatar: '🤖',
-    model: 'google/gemini-2.0-flash-exp:free',
+    model: 'openrouter/free',
     title: 'Adam AI Chatbot',
     systemPrompt: 'Sei Adam, un chatbot AI amichevole, intelligente e utile. Parla in italiano.',
     createdAt: '2026-08-20T14:00:00Z',
@@ -74,15 +74,19 @@ export const getCustomModels = () => {
     const raw = localStorage.getItem(key);
     let models = raw ? JSON.parse(raw) : DEFAULT_MODELS;
     
-    // Auto-migrate any deprecated Llama 3.3 free models to Gemini 2.0 Flash
+    // Auto-migrate any deprecated or offline free models
     let migrated = false;
     models = models.map((m) => {
-      if (m.baseModel === 'meta-llama/llama-3.3-70b-instruct:free' || m.baseModel?.includes('llama-3.3-70b-instruct:free')) {
+      if (
+        m.baseModel?.includes('llama-3.3-70b-instruct:free') || 
+        m.baseModel?.includes('gemini-flash-1.5-8b:free') ||
+        m.baseModel?.includes('gemini-2.0-flash-exp:free')
+      ) {
         migrated = true;
         return {
           ...m,
-          baseModel: 'google/gemini-2.0-flash-exp:free',
-          tags: (m.tags || []).map((t) => t === 'Llama 3.3' ? 'Gemini 2.0' : t)
+          baseModel: 'openrouter/free',
+          tags: (m.tags || []).map((t) => t === 'Llama 3.3' || t === 'Gemini 2.0' ? 'OpenRouter Free' : t)
         };
       }
       return m;
@@ -133,14 +137,18 @@ export const getCustomChatbots = () => {
     const raw = localStorage.getItem(key);
     let chatbots = raw ? JSON.parse(raw) : DEFAULT_CHATBOTS;
 
-    // Auto-migrate any deprecated Llama 3.3 free chatbots
+    // Auto-migrate any deprecated or offline free chatbots
     let migrated = false;
     chatbots = chatbots.map((c) => {
-      if (c.model === 'meta-llama/llama-3.3-70b-instruct:free' || c.model?.includes('llama-3.3-70b-instruct:free')) {
+      if (
+        c.model?.includes('llama-3.3-70b-instruct:free') || 
+        c.model?.includes('gemini-flash-1.5-8b:free') ||
+        c.model?.includes('gemini-2.0-flash-exp:free')
+      ) {
         migrated = true;
         return {
           ...c,
-          model: 'google/gemini-2.0-flash-exp:free'
+          model: 'openrouter/free'
         };
       }
       return c;

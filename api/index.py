@@ -32,12 +32,12 @@ class AgentSearchRequest(BaseModel):
 class AgentChatRequest(BaseModel):
     prompt: str
     messages: Optional[List[Dict[str, str]]] = None
-    model: str = "google/gemini-2.0-flash-exp:free"
+    model: str = "openrouter/free"
     saved_memories: Optional[List[Dict[str, Any]]] = None
     force_web_search: bool = False
 
 class InferenceChatRequest(BaseModel):
-    model: str = "google/gemini-2.0-flash-exp:free"
+    model: str = "openrouter/free"
     messages: List[Dict[str, str]]
     max_tokens: int = 1024
     temperature: float = 0.7
@@ -161,7 +161,9 @@ async def call_openrouter(messages: List[Dict[str, str]], model: str, temperatur
     if _OPENROUTER_API_KEY:
         headers["Authorization"] = f"Bearer {_OPENROUTER_API_KEY}"
     
-    target_model = "google/gemini-2.0-flash-exp:free" if model == "meta-llama/llama-3.3-70b-instruct:free" else model
+    target_model = model
+    if any(k in target_model for k in ["llama-3.3-70b-instruct:free", "gemini-flash-1.5-8b:free", "gemini-2.0-flash-exp:free"]):
+        target_model = "openrouter/free"
 
     payload = {
         "model": target_model,
@@ -179,15 +181,15 @@ async def call_openrouter(messages: List[Dict[str, str]], model: str, temperatur
                 return {"success": True, "content": content, "model": data.get("model", target_model), "usage": data.get("usage", {})}
             else:
                 err_text = resp.text
-                if "unavailable for free" in err_text.lower() or "use this slug instead" in err_text.lower():
-                    fallback_payload = {**payload, "model": "google/gemini-2.0-flash-exp:free"}
+                if any(err_kw in err_text.lower() for err_kw in ["unavailable for free", "use this slug instead", "no endpoints found", "not found"]):
+                    fallback_payload = {**payload, "model": "openrouter/free"}
                     f_resp = await client.post(f"{OPENROUTER_API_BASE}/chat/completions", headers=headers, json=fallback_payload)
                     if f_resp.status_code == 200:
                         f_data = f_resp.json()
                         return {
                             "success": True,
                             "content": f_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
-                            "model": "google/gemini-2.0-flash-exp:free",
+                            "model": "openrouter/free",
                             "usage": f_data.get("usage", {})
                         }
                 return {"success": False, "error": f"OpenRouter Error ({resp.status_code}): {err_text}"}
