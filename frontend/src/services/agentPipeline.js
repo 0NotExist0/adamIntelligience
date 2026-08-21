@@ -278,6 +278,7 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
 🎯 [LINEE GUIDA PER LA RISPOSTA]:
 - Strategia di ragionamento calibrata: ${meta.reasoning_strategy}
 - Sii sicuro, trasparente, dettagliato e privo di incertezze.
+- Fornisci SEMPRE una risposta COMPLETA fino alla conclusione naturale del discorso, senza mai troncare a metà o lasciare frasi sospese.
 - Se utilizzi dati dal web, cita le relative fonti quando appropriato.
 - Se l'argomento tocca una regola salvata nel Memory Vault, rispettala tassativamente.
 `;

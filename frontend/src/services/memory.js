@@ -5,22 +5,15 @@ const STORAGE_KEY = 'aistudio_long_term_memory';
 const DEFAULT_MEMORIES = [
   {
     id: 'mem-1',
-    text: 'L\'utente preferisce risposte in lingua italiana, chiare, ben strutturate in Markdown con codice pronto all\'uso.',
+    text: 'L\'utente preferisce risposte in lingua italiana, complete, chiare, ben strutturate in Markdown con codice pronto all\'uso e senza interruzioni.',
     category: 'Preferenze',
     source: 'Sistema',
     createdAt: '2026-08-20T12:00:00Z'
   },
   {
     id: 'mem-2',
-    text: 'I modelli e i dataset creati vengono esportati e sincronizzati su Google Drive in formato standard JSON/JSONL.',
+    text: 'I modelli e i dataset creati vengono esportati e sincronizzati sul Google Drive personale dell\'utente in formato standard JSON/JSONL.',
     category: 'Progetto',
-    source: 'Sistema',
-    createdAt: '2026-08-20T12:00:00Z'
-  },
-  {
-    id: 'mem-3',
-    text: 'L\'infrastruttura AI usa OpenRouter come gateway per modelli gratuiti (Llama 3.3 70B, DeepSeek R1, Gemini 2.0 Flash) e PRO.',
-    category: 'Architettura',
     source: 'Sistema',
     createdAt: '2026-08-20T12:00:00Z'
   }
@@ -32,22 +25,41 @@ export const getMemories = () => {
   try {
     const key = getUserScopedKey(STORAGE_KEY);
     const raw = localStorage.getItem(key);
-    if (!raw) {
-      const user = getCurrentUser();
-      const initialMemories = [
+    const currentUser = getCurrentUser();
+    let memories = raw ? JSON.parse(raw) : null;
+    let needsSave = false;
+
+    if (!memories || !Array.isArray(memories) || memories.length === 0) {
+      memories = [
         ...DEFAULT_MEMORIES,
-        ...(user ? [{
+        ...(currentUser ? [{
           id: `mem-user-init`,
-          text: `L'utente connesso è ${user.name} (${user.email}). Il suo account Google Drive è collegato per il salvataggio dei modelli.`,
+          text: `L'utente connesso è ${currentUser.name} (${currentUser.email}). Il suo account Google Drive personale è collegato per il salvataggio dei dati.`,
           category: 'Profilo Utente',
           source: 'Google Auth',
           createdAt: new Date().toISOString()
         }] : [])
       ];
-      localStorage.setItem(key, JSON.stringify(initialMemories));
-      return initialMemories;
+      needsSave = true;
+    } else {
+      // Auto-clean any old fake emails (utente.google@gmail.com)
+      memories = memories.map((m) => {
+        if (m.text && m.text.includes('utente.google@gmail.com')) {
+          needsSave = true;
+          const actualEmail = currentUser?.email || 'personale';
+          return {
+            ...m,
+            text: m.text.replace(/utente\.google@gmail\.com/g, actualEmail)
+          };
+        }
+        return m;
+      });
     }
-    return JSON.parse(raw);
+
+    if (needsSave) {
+      localStorage.setItem(key, JSON.stringify(memories));
+    }
+    return memories;
   } catch (e) {
     return DEFAULT_MEMORIES;
   }
@@ -100,14 +112,9 @@ export const buildMemoryContextPrompt = () => {
     .map((m, idx) => `${idx + 1}. [${m.category}] ${m.text}`)
     .join('\n');
 
-  return `\n\n🧠 [MEMORIA A LUNGO TERMINE DELL'AI - INFORMAZIONI E REGOLE FONDAMENTALI]:
-Prima di formulare la risposta, controlla SEMPRE e rispetta le seguenti informazioni e fatti importanti memorizzati:
+  return `\n\n🧠 [MEMORIA A LUNGO TERMINE - INFORMAZIONI E REGOLE SALVATE]:
+Controlla SEMPRE e rispetta le seguenti informazioni e fatti memorizzati per l'utente:
 ${memoryLines}
-
-REGOLA AUTO-MEMORIA: Se durante la conversazione l'utente ti dice qualcosa di importante, una preferenza, una regola o un'informazione chiave da ricordare per il futuro, salvala aggiungendo alla fine della risposta il blocco:
-\`\`\`memory
-{"fact": "informazione importante da memorizzare", "category": "Preferenze|Progetto|Regole"}
-\`\`\`
 `;
 };
 
@@ -142,5 +149,8 @@ export const autoExtractMemoriesFromResponse = (responseContent) => {
 
 export const stripMemoryBlocks = (content) => {
   if (!content) return '';
-  return content.replace(/```memory[\s\S]*?```/g, '').trim();
+  return content
+    .replace(/```memory[\s\S]*?```/gi, '')
+    .replace(/```memory[\s\S]*$/gi, '')
+    .trim();
 };
