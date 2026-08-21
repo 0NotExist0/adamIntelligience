@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   Plus, 
@@ -10,9 +10,15 @@ import {
   Layers,
   Settings,
   LogOut,
-  UserCheck
+  UserCheck,
+  ChevronDown,
+  User,
+  ShieldCheck,
+  FolderOpen
 } from 'lucide-react';
 import { getOpenRouterKey } from '../services/openrouter';
+import { openGoogleDriveFolder } from '../services/storage';
+import { getSavedAccounts, switchAccount } from '../services/auth';
 
 export default function Navbar({ 
   user,
@@ -23,9 +29,34 @@ export default function Navbar({
   onOpenOpenRouter, 
   onOpenMemory,
   memoryCount = 0,
-  onNavigate 
+  onNavigate,
+  onUserChanged
 }) {
   const hasKey = Boolean(getOpenRouterKey());
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const savedAccounts = getSavedAccounts().filter((a) => a.id !== user?.id);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSwitch = (accId) => {
+    const switched = switchAccount(accId);
+    setProfileMenuOpen(false);
+    if (onUserChanged && switched) {
+      onUserChanged(switched);
+    } else {
+      window.location.reload();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 w-full glass-panel border-b border-slate-800/80 px-6 py-3.5 flex items-center justify-between bg-slate-950/85 backdrop-blur-xl">
@@ -47,7 +78,7 @@ export default function Navbar({
                 Drive + Memory
               </span>
             </div>
-            <p className="text-xs text-slate-400">Hub Modelli AI, Memoria Persistente & Google Drive</p>
+            <p className="text-xs text-slate-400">Hub Modelli AI, Memoria Persistente & Google Drive Personale</p>
           </div>
         </div>
       </div>
@@ -101,18 +132,16 @@ export default function Navbar({
           </span>
         </button>
 
-        {/* Google Drive Link */}
-        <a
-          href="https://drive.google.com/drive/my-drive"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold transition-all"
-          title="Apri Google Drive"
+        {/* Google Drive Link - Personal to current user */}
+        <button
+          onClick={openGoogleDriveFolder}
+          className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold transition-all active:scale-95"
+          title={`Apri Google Drive personale di ${user?.email || 'utente'}`}
         >
           <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-          <span>Drive</span>
+          <span>Mio Drive</span>
           <ExternalLink className="w-3 h-3 text-slate-500" />
-        </a>
+        </button>
 
         {/* OpenRouter Key Setup */}
         <button
@@ -155,10 +184,14 @@ export default function Navbar({
           <Bot className="w-4 h-4" />
         </button>
 
-        {/* Google User Profile & Logout */}
+        {/* Google User Profile Dropdown & Switcher */}
         {user && (
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-            <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-800 py-1 px-2.5 rounded-2xl">
+          <div className="relative pl-2 border-l border-slate-800" ref={dropdownRef}>
+            <button
+              onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+              className="flex items-center gap-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 py-1 px-2.5 rounded-2xl transition-all"
+              title="Gestione Account Google e Credenziali"
+            >
               <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow-sm overflow-hidden">
                 {user.avatar ? (
                   <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
@@ -168,20 +201,92 @@ export default function Navbar({
               </div>
               <div className="hidden xl:block text-left">
                 <span className="text-[11px] font-bold text-white leading-none block">{user.name}</span>
-                <span className="text-[9px] text-slate-400 leading-none block truncate max-w-[100px]">{user.email}</span>
+                <span className="text-[9px] text-slate-400 leading-none block truncate max-w-[90px]">{user.email}</span>
               </div>
-            </div>
-
-            <button
-              onClick={onLogout}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 transition-all active:scale-95"
-              title="Disconnetti account Google"
-            >
-              <LogOut className="w-4 h-4" />
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
+
+            {/* Profile Dropdown Menu */}
+            {profileMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 glass-panel bg-slate-900/95 border border-purple-500/30 rounded-2xl shadow-2xl p-3 space-y-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Account Connesso</span>
+                    <span className="text-[9px] bg-emerald-500/15 text-emerald-300 px-1.5 py-0.2 rounded-full font-semibold border border-emerald-500/30">Google</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">{user.name}</h4>
+                  <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      openGoogleDriveFolder();
+                    }}
+                    className="w-full flex items-center justify-between p-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Apri Mio Google Drive</span>
+                    </div>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      onNavigate('settings');
+                    }}
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 text-xs font-medium transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Impostazioni & Credenziali Browser</span>
+                  </button>
+                </div>
+
+                {/* Switch accounts section if multiple accounts exist */}
+                {savedAccounts.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block px-1">
+                      Altri Account nel Browser
+                    </span>
+                    {savedAccounts.map((acc) => (
+                      <button
+                        key={acc.id}
+                        onClick={() => handleSwitch(acc.id)}
+                        className="w-full flex items-center justify-between p-1.5 px-2 rounded-xl bg-slate-950/50 hover:bg-purple-950/40 text-left transition-colors group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-purple-600/40 flex items-center justify-center text-[9px] font-bold text-white overflow-hidden">
+                            {acc.avatar ? <img src={acc.avatar} alt="" className="w-full h-full object-cover" /> : acc.name.charAt(0)}
+                          </div>
+                          <span className="text-xs text-slate-300 group-hover:text-purple-200 truncate max-w-[140px]">{acc.name}</span>
+                        </div>
+                        <span className="text-[10px] text-purple-400 opacity-0 group-hover:opacity-100">Passa ↗</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-800/80">
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 text-xs font-bold transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Disconnetti Sessione</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </header>
   );
 }
+

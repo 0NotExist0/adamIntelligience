@@ -56,7 +56,7 @@ class CopilotEngine:
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = "meta-llama/llama-3.3-70b-instruct:free",
+        model: str = "google/gemini-2.0-flash-exp:free",
         temperature: float = 0.7,
         max_tokens: int = 1024
     ) -> Dict[str, Any]:

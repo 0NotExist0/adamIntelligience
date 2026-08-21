@@ -27,7 +27,7 @@ Puoi eseguire azioni speciali per l'utente restituendo un blocco JSON:
 {
   "action": "create_model",
   "name": "Nome Modello",
-  "baseModel": "meta-llama/llama-3.3-70b-instruct:free",
+  "baseModel": "google/gemini-2.0-flash-exp:free",
   "description": "Descrizione",
   "systemPrompt": "Istruzioni"
 }
@@ -38,7 +38,7 @@ oppure per un chatbot:
   "action": "create_chatbot",
   "name": "Nome Chatbot",
   "avatar": "🤖",
-  "model": "meta-llama/llama-3.3-70b-instruct:free",
+  "model": "google/gemini-2.0-flash-exp:free",
   "systemPrompt": "Istruzioni"
 }
 \`\`\`
@@ -65,12 +65,12 @@ export default function AICopilotDrawer({
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: `Ciao! Sono il tuo **AI Copilot Studio**. ⚡🤖\n\nPosso aiutarti a:\n- **Creare modelli personalizzati** per Google Drive\n- **Creare Chatbot AI** basati su DeepSeek R1, Llama 3.3 o Gemini 2.0\n- **Generare dataset sintetici** di training\n- **Scrivere codice** Python, JavaScript o React\n\nCosa vorresti realizzare?`
+      content: `Ciao! Sono il tuo **AI Copilot Studio**. ⚡🤖\n\nPosso aiutarti a:\n- **Creare modelli personalizzati** per Google Drive\n- **Creare Chatbot AI** basati su Gemini 2.0 Flash, DeepSeek R1 o Qwen\n- **Generare dataset sintetici** di training\n- **Scrivere codice** Python, JavaScript o React\n\nCosa vorresti realizzare?`
     }
   ]);
   const [inputPrompt, setInputPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash-exp:free');
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [agentStep, setAgentStep] = useState('');
   const messagesEndRef = useRef(null);

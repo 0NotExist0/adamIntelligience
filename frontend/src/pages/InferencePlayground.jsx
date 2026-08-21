@@ -26,7 +26,7 @@ import { useToast } from '../components/Toast';
 
 export default function InferencePlayground({ initialModel }) {
   const { addToast } = useToast();
-  const [selectedModel, setSelectedModel] = useState(initialModel || 'meta-llama/llama-3.3-70b-instruct:free');
+  const [selectedModel, setSelectedModel] = useState(initialModel || 'google/gemini-2.0-flash-exp:free');
   const [customModel, setCustomModel] = useState('');
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [messages, setMessages] = useState([

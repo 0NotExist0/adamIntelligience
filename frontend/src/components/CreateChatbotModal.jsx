@@ -18,7 +18,7 @@ import { useToast } from './Toast';
 export default function CreateChatbotModal({ isOpen, onClose, onChatbotCreated }) {
   const { addToast } = useToast();
   const [step, setStep] = useState(1);
-  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash-exp:free');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [chatbotName, setChatbotName] = useState('');
   const [chatbotAvatar, setChatbotAvatar] = useState('🤖');

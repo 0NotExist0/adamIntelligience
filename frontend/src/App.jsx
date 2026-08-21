@@ -147,6 +147,10 @@ function DashboardApp() {
         onOpenMemory={() => setIsMemoryModalOpen(true)}
         memoryCount={memories.length}
         onNavigate={(tab) => setActiveTab(tab)}
+        onUserChanged={(u) => {
+          setCurrentUser(u);
+          loadData();
+        }}
       />
 
       {/* Main App Layout */}
@@ -209,7 +213,17 @@ function DashboardApp() {
           )}
 
           {activeTab === 'settings' && (
-            <SettingsManager />
+            <SettingsManager
+              onUserUpdated={(u) => {
+                setCurrentUser(u);
+                loadData();
+              }}
+              onSwitchAccount={(u) => {
+                setCurrentUser(u);
+                loadData();
+              }}
+              onLogout={handleLogout}
+            />
           )}
         </main>
       </div>

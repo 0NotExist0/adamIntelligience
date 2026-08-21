@@ -7,12 +7,12 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 
 POPULAR_OPENROUTER_MODELS = [
     {
-        "id": "meta-llama/llama-3.3-70b-instruct:free",
-        "name": "Llama 3.3 70B Instruct (FREE)",
-        "tag": "Gratuito • Massima Intelligenza",
-        "desc": "Il modello open source più potente di Meta, completamente gratuito su OpenRouter.",
-        "badge": "100% FREE",
-        "color": "border-purple-500/40 text-purple-300 bg-purple-500/10"
+        "id": "google/gemini-2.0-flash-exp:free",
+        "name": "Google Gemini 2.0 Flash (FREE)",
+        "tag": "Gratuito • Velocità Estrema",
+        "desc": "Il nuovissimo modello Google ultra rapido con finestra di contesto enorme da 1M token.",
+        "badge": "Ultra Fast",
+        "color": "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
     },
     {
         "id": "deepseek/deepseek-r1:free",
@@ -21,14 +21,6 @@ POPULAR_OPENROUTER_MODELS = [
         "desc": "Il modello di ragionamento matematico e deduttivo che compete con OpenAI o1.",
         "badge": "Top Reasoning",
         "color": "border-blue-500/40 text-blue-300 bg-blue-500/10"
-    },
-    {
-        "id": "google/gemini-2.0-flash-exp:free",
-        "name": "Google Gemini 2.0 Flash (FREE)",
-        "tag": "Gratuito • Velocità Estrema",
-        "desc": "Il nuovissimo modello Google ultra rapido con finestra di contesto enorme.",
-        "badge": "Ultra Fast",
-        "color": "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
     },
     {
         "id": "qwen/qwen-2.5-coder-32b-instruct:free",
@@ -45,6 +37,14 @@ POPULAR_OPENROUTER_MODELS = [
         "desc": "Leggero, rapido e conciso per task quotidiani e risposte sintetiche.",
         "badge": "Free Classic",
         "color": "border-amber-500/40 text-amber-300 bg-amber-500/10"
+    },
+    {
+        "id": "meta-llama/llama-3.1-8b-instruct:free",
+        "name": "Meta Llama 3.1 8B Instruct (FREE)",
+        "tag": "Gratuito • Meta Open Source",
+        "desc": "Modello rapido e compatto di Meta per compiti generali.",
+        "badge": "100% FREE",
+        "color": "border-purple-500/40 text-purple-300 bg-purple-500/10"
     },
     {
         "id": "anthropic/claude-3.5-sonnet",
@@ -116,9 +116,9 @@ class OpenRouterManager:
         
         # If user has no API key and model is not a :free model, warn them or default to a free model
         active_model = model
-        if not self.api_key and not active_model.endswith(":free"):
+        if not active_model or active_model == "meta-llama/llama-3.3-70b-instruct:free":
             # Fallback to free equivalent
-            active_model = "meta-llama/llama-3.3-70b-instruct:free"
+            active_model = "google/gemini-2.0-flash-exp:free"
 
         payload = {
             "model": active_model,
@@ -148,6 +148,20 @@ class OpenRouterManager:
                 else:
                     err_json = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
                     err_msg = err_json.get("error", {}).get("message") or resp.text
+                    
+                    # Auto fallback to Gemini 2.0 Flash if unavailable for free
+                    if "unavailable for free" in err_msg.lower() or "use this slug instead" in err_msg.lower():
+                        fallback_payload = {**payload, "model": "google/gemini-2.0-flash-exp:free"}
+                        f_resp = await client.post(f"{OPENROUTER_API_BASE}/chat/completions", headers=headers, json=fallback_payload)
+                        if f_resp.status_code == 200:
+                            f_data = f_resp.json()
+                            return {
+                                "success": True,
+                                "content": f_data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+                                "model": "google/gemini-2.0-flash-exp:free",
+                                "usage": f_data.get("usage", {})
+                            }
+
                     return {
                         "success": False,
                         "error": f"OpenRouter Error ({resp.status_code}): {err_msg}",

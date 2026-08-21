@@ -12,6 +12,7 @@ import {
   FolderDown,
   Brain
 } from 'lucide-react';
+import { openGoogleDriveFolder } from '../services/storage';
 
 export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, onOpenMemory, stats }) {
   const navItems = [
@@ -97,15 +98,13 @@ export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, onOpenMe
           <p className="text-[11px] text-slate-400 leading-tight">
             I tuoi modelli, pesi e dataset possono essere salvati e scaricati direttamente su Drive.
           </p>
-          <a
-            href="https://drive.google.com/drive/my-drive"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={openGoogleDriveFolder}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors"
           >
-            <span>Apri Drive</span>
+            <span>Apri Drive Personale</span>
             <ExternalLink className="w-3 h-3" />
-          </a>
+          </button>
         </div>
       </div>
 

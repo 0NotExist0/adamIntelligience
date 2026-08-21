@@ -11,10 +11,10 @@ const DEFAULT_MODELS = [
   {
     id: 'model-adam-core',
     name: 'Adam AI Assistant v1.0',
-    baseModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    baseModel: 'google/gemini-2.0-flash-exp:free',
     description: 'Assistente AI generale ottimizzato per produttività, analisi e problem solving in italiano.',
     systemPrompt: 'Sei Adam, un assistente AI avanzato, brillante, preciso e amichevole. Rispondi con grande chiarezza, formattando in Markdown ed evidenziando i punti chiave.',
-    tags: ['Llama 3.3', 'General', 'Italiano'],
+    tags: ['Gemini 2.0', 'General', 'Italiano'],
     temperature: 0.7,
     maxTokens: 1024,
     createdAt: '2026-08-20T10:00:00Z',
@@ -41,7 +41,7 @@ const DEFAULT_CHATBOTS = [
     id: 'bot-adam',
     name: 'Adam Chatbot',
     avatar: '🤖',
-    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    model: 'google/gemini-2.0-flash-exp:free',
     title: 'Adam AI Chatbot',
     systemPrompt: 'Sei Adam, un chatbot AI amichevole, intelligente e utile. Parla in italiano.',
     createdAt: '2026-08-20T14:00:00Z',
@@ -65,7 +65,7 @@ const DEFAULT_DATASETS = [
   }
 ];
 
-import { getUserScopedKey } from './auth';
+import { getUserScopedKey, getCurrentUser } from './auth';
 
 // --- MODELS ---
 export const getCustomModels = () => {
@@ -213,6 +213,18 @@ export const downloadJSONLFile = (filename, dataArray) => {
   URL.revokeObjectURL(url);
 };
 
-export const openGoogleDriveFolder = () => {
-  window.open('https://drive.google.com/drive/my-drive', '_blank');
+export const getGoogleDriveUrl = () => {
+  const user = getCurrentUser();
+  if (user && user.driveFolderUrl && user.driveFolderUrl.trim()) {
+    return user.driveFolderUrl.trim();
+  }
+  if (user && user.email) {
+    return `https://drive.google.com/drive/u/?authuser=${encodeURIComponent(user.email)}`;
+  }
+  return 'https://drive.google.com/drive/my-drive';
 };
+
+export const openGoogleDriveFolder = () => {
+  window.open(getGoogleDriveUrl(), '_blank');
+};
+

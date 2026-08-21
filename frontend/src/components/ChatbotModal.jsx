@@ -30,8 +30,9 @@ export default function ChatbotModal({ bot, onClose }) {
     }
   ]);
   const [inputPrompt, setInputPrompt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(bot.model || bot.baseModel || 'meta-llama/llama-3.3-70b-instruct:free');
+  const rawModel = bot.model || bot.baseModel || 'google/gemini-2.0-flash-exp:free';
+  const initialBotModel = rawModel === 'meta-llama/llama-3.3-70b-instruct:free' ? 'google/gemini-2.0-flash-exp:free' : rawModel;
+  const [selectedModel, setSelectedModel] = useState(initialBotModel);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [agentStep, setAgentStep] = useState('');
   const messagesEndRef = useRef(null);

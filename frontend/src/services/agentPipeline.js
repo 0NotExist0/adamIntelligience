@@ -196,7 +196,7 @@ export const executeWebSearch = async (query) => {
 export const runAgentChatPipeline = async ({
   prompt,
   messages = [],
-  model = 'meta-llama/llama-3.3-70b-instruct:free',
+  model = 'google/gemini-2.0-flash-exp:free',
   forceWebSearch = false,
   onProgressStep = null // callback for UI progress stages
 }) => {

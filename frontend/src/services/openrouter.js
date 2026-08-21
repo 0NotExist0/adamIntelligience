@@ -3,15 +3,15 @@ import axios from 'axios';
 const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
 
 export const CURATED_POPULAR_MODELS = [
-  // FREE MODELS
+  // 100% FREE ACTIVE MODELS
   {
-    id: 'meta-llama/llama-3.3-70b-instruct:free',
-    name: 'Meta Llama 3.3 70B Instruct',
-    provider: 'Meta',
+    id: 'google/gemini-2.0-flash-exp:free',
+    name: 'Google Gemini 2.0 Flash',
+    provider: 'Google',
     isFree: true,
-    tag: 'Consigliato • Massima Intelligenza',
-    desc: 'Il miglior modello open-weight di Meta per conversazioni brillanti e compiti complessi.',
-    context_length: 131072,
+    tag: 'Consigliato • Ultra Veloce • Finestra 1M',
+    desc: 'Modello di ultimissima generazione Google con velocità in tempo reale e 1M token di contesto.',
+    context_length: 1048576,
     pricing: { prompt: '0', completion: '0' }
   },
   {
@@ -19,19 +19,9 @@ export const CURATED_POPULAR_MODELS = [
     name: 'DeepSeek R1 Reasoning',
     provider: 'DeepSeek',
     isFree: true,
-    tag: 'Top Reasoning • Logica & Matematica',
-    desc: 'Specializzato in ragionamento profondo, step-by-step thinking e deduzione scientifica.',
+    tag: 'Top Reasoning • Logica & Problem Solving',
+    desc: 'Specializzato in ragionamento profondo, step-by-step thinking e deduzione logico-matematica.',
     context_length: 65536,
-    pricing: { prompt: '0', completion: '0' }
-  },
-  {
-    id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Google Gemini 2.0 Flash',
-    provider: 'Google',
-    isFree: true,
-    tag: 'Ultra Fast • Finestra 1M',
-    desc: 'Nuovissima generazione Google con velocità istantanea e comprensione contestuale enorme.',
-    context_length: 1048576,
     pricing: { prompt: '0', completion: '0' }
   },
   {
@@ -40,7 +30,7 @@ export const CURATED_POPULAR_MODELS = [
     provider: 'Alibaba Qwen',
     isFree: true,
     tag: 'Coding & Dev Specialist',
-    desc: 'Il punto di riferimento open source per scrittura codice, script e automazioni.',
+    desc: 'Il miglior modello per programmazione, refactoring Python, JavaScript, React e architetture cloud.',
     context_length: 32768,
     pricing: { prompt: '0', completion: '0' }
   },
@@ -49,8 +39,8 @@ export const CURATED_POPULAR_MODELS = [
     name: 'Mistral 7B Instruct',
     provider: 'Mistral AI',
     isFree: true,
-    tag: 'Leggero & Veloce',
-    desc: 'Modello classico versatile per risposte sintetiche e compiti quotidiani.',
+    tag: 'Leggero & Versatile',
+    desc: 'Modello versatile per risposte sintetiche e compiti di conversazione quotidiani.',
     context_length: 32768,
     pricing: { prompt: '0', completion: '0' }
   },
@@ -59,13 +49,43 @@ export const CURATED_POPULAR_MODELS = [
     name: 'Google Gemini Flash 1.5 8B',
     provider: 'Google',
     isFree: true,
-    tag: 'Snello & Rapido',
-    desc: 'Modello ultraleggero ideale per compiti ripetitivi e velocità massima.',
+    tag: 'Snello & Istantaneo',
+    desc: 'Modello ultrarapido ideale per compiti frequenti e massima velocità di generazione.',
     context_length: 1000000,
+    pricing: { prompt: '0', completion: '0' }
+  },
+  {
+    id: 'meta-llama/llama-3.1-8b-instruct:free',
+    name: 'Meta Llama 3.1 8B Instruct',
+    provider: 'Meta',
+    isFree: true,
+    tag: 'Meta Llama Free',
+    desc: 'Modello compatto e affidabile di Meta per chat ed elaborazione testi.',
+    context_length: 131072,
     pricing: { prompt: '0', completion: '0' }
   },
 
   // PAID / PRO FLAGSHIP MODELS
+  {
+    id: 'meta-llama/llama-3.3-70b-instruct',
+    name: 'Meta Llama 3.3 70B Instruct (PRO)',
+    provider: 'Meta',
+    isFree: false,
+    tag: 'Top Performance Open Weight',
+    desc: 'Versione standard di punta di Meta Llama 3.3 per compiti complessi ad alta intelligenza.',
+    context_length: 131072,
+    pricing: { prompt: '$0.12 / 1M', completion: '$0.30 / 1M' }
+  },
+  {
+    id: 'deepseek/deepseek-chat',
+    name: 'DeepSeek V3 (Chat PRO)',
+    provider: 'DeepSeek',
+    isFree: false,
+    tag: 'Super Potente & Conveniente',
+    desc: 'Modello MoE da 671B parametri con prestazioni ai vertici mondiali.',
+    context_length: 64000,
+    pricing: { prompt: '$0.14 / 1M', completion: '$0.28 / 1M' }
+  },
   {
     id: 'anthropic/claude-3.5-sonnet',
     name: 'Claude 3.5 Sonnet',
@@ -95,26 +115,6 @@ export const CURATED_POPULAR_MODELS = [
     desc: 'Versione ad alte prestazioni ed estremamente economica di GPT-4o.',
     context_length: 128000,
     pricing: { prompt: '$0.15 / 1M', completion: '$0.60 / 1M' }
-  },
-  {
-    id: 'deepseek/deepseek-chat',
-    name: 'DeepSeek V3 (Chat)',
-    provider: 'DeepSeek',
-    isFree: false,
-    tag: 'Super Potente & Conveniente',
-    desc: 'Modello MoE da 671B parametri con prestazioni ai vertici mondiali.',
-    context_length: 64000,
-    pricing: { prompt: '$0.14 / 1M', completion: '$0.28 / 1M' }
-  },
-  {
-    id: 'mistralai/mistral-large-2411',
-    name: 'Mistral Large 2411',
-    provider: 'Mistral AI',
-    isFree: false,
-    tag: 'Top Performance Europea',
-    desc: 'Modello flagship di Mistral AI specializzato in ragionamento e multilingualità.',
-    context_length: 128000,
-    pricing: { prompt: '$2.00 / 1M', completion: '$6.00 / 1M' }
   }
 ];
 
@@ -201,13 +201,23 @@ export const setOpenRouterKey = (key) => {
 
 import { buildMemoryContextPrompt, autoExtractMemoriesFromResponse, stripMemoryBlocks } from './memory';
 
+// List of top reliable free fallback models in priority order
+const RELIABLE_FREE_FALLBACKS = [
+  'google/gemini-2.0-flash-exp:free',
+  'deepseek/deepseek-r1:free',
+  'qwen/qwen-2.5-coder-32b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+  'google/gemini-flash-1.5-8b:free'
+];
+
 export const sendOpenRouterChat = async ({
-  model = 'meta-llama/llama-3.3-70b-instruct:free',
+  model = 'google/gemini-2.0-flash-exp:free',
   messages = [],
   temperature = 0.7,
   max_tokens = 1024,
   apiKey = null,
-  enableMemory = true
+  enableMemory = true,
+  allowFallback = true
 }) => {
   const activeKey = apiKey || getOpenRouterKey();
 
@@ -244,21 +254,51 @@ export const sendOpenRouterChat = async ({
   if (!activeKey) {
     return {
       success: false,
-      error: '⚠️ Chiave API OpenRouter mancante! I modelli contrassegnati con ":free" (DeepSeek R1, Llama 3.3, Gemini 2.0) sono al 100% GRATUITI a costo €0.00, ma OpenRouter richiede comunque una Chiave API gratuita per autorizzare le richieste. Puoi generarne una in 30 secondi gratis su openrouter.ai/keys (non serve carta di credito) e incollarla qui cliccando su "Impostazioni & Chiavi".'
+      error: '⚠️ Chiave API OpenRouter mancante! Genera una chiave gratuita (a costo 0.00€) su openrouter.ai/keys e incollala nelle Impostazioni.'
     };
   }
 
-  try {
-    const response = await axios.post(
+  const executeRequest = async (targetModel) => {
+    return await axios.post(
       `${OPENROUTER_API_BASE}/chat/completions`,
       {
-        model,
+        model: targetModel,
         messages: enrichedMessages,
         temperature,
         max_tokens
       },
       { headers, timeout: 60000 }
     );
+  };
+
+  try {
+    let currentModel = model;
+    
+    // Automatically sanitize deprecated model slugs
+    if (currentModel === 'meta-llama/llama-3.3-70b-instruct:free') {
+      currentModel = 'google/gemini-2.0-flash-exp:free';
+    }
+
+    let response;
+    try {
+      response = await executeRequest(currentModel);
+    } catch (primaryErr) {
+      const errMsg = primaryErr.response?.data?.error?.message || primaryErr.message || '';
+      const isUnavailableFree = errMsg.toLowerCase().includes('unavailable for free') || 
+                                errMsg.toLowerCase().includes('use this slug instead') ||
+                                primaryErr.response?.status === 404;
+
+      if (allowFallback && isUnavailableFree) {
+        // Find a fallback model different from currentModel
+        const fallback = RELIABLE_FREE_FALLBACKS.find((f) => f !== currentModel) || 'google/gemini-2.0-flash-exp:free';
+        console.warn(`[OpenRouter Fallback] Il modello "${currentModel}" non è disponibile gratis. Fallback su "${fallback}"...`);
+        
+        response = await executeRequest(fallback);
+        currentModel = fallback;
+      } else {
+        throw primaryErr;
+      }
+    }
 
     if (response.data && response.data.choices && response.data.choices[0]) {
       const rawContent = response.data.choices[0].message.content || '';
@@ -276,13 +316,13 @@ export const sendOpenRouterChat = async ({
         content: cleanContent,
         rawContent,
         savedMemories,
-        model: response.data.model || model,
+        model: response.data.model || currentModel,
         usage: response.data.usage || {}
       };
     } else {
       return {
         success: false,
-        error: 'Nessuna risposta ricevuta dal modello'
+        error: 'Nessuna risposta ricevuta dal modello OpenRouter'
       };
     }
   } catch (err) {
@@ -291,15 +331,13 @@ export const sendOpenRouterChat = async ({
 
     let userFriendlyMsg = rawMsg;
     if (status === 401 || rawMsg.toLowerCase().includes('user not found') || rawMsg.toLowerCase().includes('api key')) {
-      userFriendlyMsg = 'Chiave API OpenRouter non valida o non inserita. Genera una chiave gratuita su openrouter.ai/keys (a costo 0€) e salvala nell\'app.';
+      userFriendlyMsg = 'Chiave API OpenRouter non valida. Verifica la tua chiave su openrouter.ai/keys e incollala nelle Impostazioni.';
+    } else if (rawMsg.toLowerCase().includes('unavailable for free') || rawMsg.toLowerCase().includes('use this slug instead')) {
+      userFriendlyMsg = 'Questo modello non è più disponibile gratuitamente (:free) su OpenRouter. Seleziona uno dei modelli 100% gratuiti attivi come Google Gemini 2.0 Flash, DeepSeek R1 o Qwen 2.5 Coder.';
     } else if (status === 402 || rawMsg.toLowerCase().includes('credits') || rawMsg.toLowerCase().includes('payment')) {
-      if (model.includes(':free')) {
-        userFriendlyMsg = 'Questo modello è gratuito (:free), ma i server gratuiti di OpenRouter sono temporaneamente congestionati dal traffico mondiale o il limite orario gratuito del tuo account è stato raggiunto. Prova a selezionare un altro modello gratuito (es. Google Gemini 2.0 Flash o DeepSeek R1).';
-      } else {
-        userFriendlyMsg = `Il modello "${model}" è un modello PRO a pagamento e richiede crediti sul tuo account OpenRouter. Se desideri usare modelli a costo zero, seleziona uno dei modelli con il tag ":free" (es. Llama 3.3 70B :free, DeepSeek R1 :free, Gemini 2.0 :free).`;
-      }
+      userFriendlyMsg = 'Crediti insufficienti per questo modello PRO a pagamento. Per usare modelli gratuiti a costo €0.00, seleziona Google Gemini 2.0 Flash (:free), DeepSeek R1 (:free) o Qwen Coder (:free).';
     } else if (status === 429) {
-      userFriendlyMsg = 'Limite di richieste al minuto raggiunto sui nodi gratuiti di OpenRouter. Riprova tra pochi secondi o passa a un altro modello gratuito.';
+      userFriendlyMsg = 'Limite temporaneo di richieste al minuto raggiunto sui server gratuiti di OpenRouter. Riprova tra qualche secondo.';
     }
 
     return {
@@ -308,3 +346,4 @@ export const sendOpenRouterChat = async ({
     };
   }
 };
+

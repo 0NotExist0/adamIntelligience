@@ -94,7 +94,7 @@ class AgentPipeline:
         self,
         prompt: str,
         messages: Optional[List[Dict[str, str]]] = None,
-        model: str = "meta-llama/llama-3.3-70b-instruct:free",
+        model: str = "google/gemini-2.0-flash-exp:free",
         saved_memories: Optional[List[Dict[str, Any]]] = None,
         force_web_search: bool = False
     ) -> Dict[str, Any]:

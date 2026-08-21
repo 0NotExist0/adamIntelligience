@@ -52,7 +52,7 @@ Rispondi ESCLUSIVAMENTE con un array JSON valido nel seguente formato:
 ]`;
 
       const res = await sendOpenRouterChat({
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 1500
       });

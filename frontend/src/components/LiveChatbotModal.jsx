@@ -182,11 +182,11 @@ Puoi iniziare a testare la conversazione direttamente qui sotto oppure aprire lo
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-purple-200 font-semibold focus:outline-none focus:border-purple-500"
                 >
-                  <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (OpenRouter FREE)</option>
-                  <option value="deepseek/deepseek-r1:free">DeepSeek R1 Reasoning (FREE)</option>
                   <option value="google/gemini-2.0-flash-exp:free">Google Gemini 2.0 Flash (FREE)</option>
+                  <option value="deepseek/deepseek-r1:free">DeepSeek R1 Reasoning (FREE)</option>
                   <option value="qwen/qwen-2.5-coder-32b-instruct:free">Qwen 2.5 Coder 32B (FREE)</option>
                   <option value="mistralai/mistral-7b-instruct:free">Mistral 7B (FREE)</option>
+                  <option value="meta-llama/llama-3.1-8b-instruct:free">Meta Llama 3.1 8B (FREE)</option>
                   <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                   <option value="openai/gpt-4o">OpenAI GPT-4o</option>
                 </select>

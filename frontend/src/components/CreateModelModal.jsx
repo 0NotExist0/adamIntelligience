@@ -16,7 +16,7 @@ import confetti from 'canvas-confetti';
 export default function CreateModelModal({ isOpen, onClose, onModelCreated }) {
   const { addToast } = useToast();
   const [name, setName] = useState('');
-  const [baseModel, setBaseModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+  const [baseModel, setBaseModel] = useState('google/gemini-2.0-flash-exp:free');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('Sei un assistente AI specializzato, preciso ed efficiente. Rispondi sempre con spiegazioni chiare e codice pronto all\'uso.');
