@@ -127,7 +127,27 @@ export default function DashboardOverview({
       </div>
 
       {/* Quick Action Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div 
+          onClick={() => onNavigate('strikes')}
+          className="glass-card p-6 rounded-3xl border border-rose-500/30 hover:border-rose-500/60 cursor-pointer group transition-all"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-rose-600/20 text-rose-300 border border-rose-500/30 flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition-transform">
+            📢
+          </div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white group-hover:text-rose-300 transition-colors">
+              Monitor Scioperi
+            </h3>
+            <span className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded font-bold">
+              LIVE
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Radar per tutte le 8 categorie (Treni, TPL, Aerei, Sanità, Scuola) con switch automatico.
+          </p>
+        </div>
+
         <div 
           onClick={onOpenCreateChatbot}
           className="glass-card p-6 rounded-3xl border border-purple-500/30 hover:border-purple-500/60 cursor-pointer group transition-all"
@@ -151,7 +171,7 @@ export default function DashboardOverview({
             💾
           </div>
           <h3 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">
-            Modello per Google Drive
+            Modello per Drive
           </h3>
           <p className="text-xs text-slate-400 mt-1">
             Definisci pesi, istruzioni e architettura per esportarli con 1 click nel tuo Google Drive.
@@ -166,7 +186,7 @@ export default function DashboardOverview({
             📊
           </div>
           <h3 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors">
-            Generatore Dataset con AI
+            Dataset con AI
           </h3>
           <p className="text-xs text-slate-400 mt-1">
             Genera automaticamente coppie di istruzioni e risposte sintetiche per il fine-tuning.

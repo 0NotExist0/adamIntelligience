@@ -61,6 +61,15 @@ export default function Navbar({
           Dashboard
         </button>
         <button
+          onClick={() => onNavigate('strikes')}
+          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-300 hover:text-white hover:bg-rose-600/20 transition-all flex items-center gap-1.5"
+        >
+          <span>📢 Scioperi</span>
+          <span className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded-full font-bold border border-rose-500/30">
+            LIVE
+          </span>
+        </button>
+        <button
           onClick={() => onNavigate('models')}
           className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all"
         >
