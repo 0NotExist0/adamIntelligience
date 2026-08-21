@@ -72,7 +72,26 @@ export const getCustomModels = () => {
   try {
     const key = getUserScopedKey(STORAGE_KEYS.MODELS);
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : DEFAULT_MODELS;
+    let models = raw ? JSON.parse(raw) : DEFAULT_MODELS;
+    
+    // Auto-migrate any deprecated Llama 3.3 free models to Gemini 2.0 Flash
+    let migrated = false;
+    models = models.map((m) => {
+      if (m.baseModel === 'meta-llama/llama-3.3-70b-instruct:free' || m.baseModel?.includes('llama-3.3-70b-instruct:free')) {
+        migrated = true;
+        return {
+          ...m,
+          baseModel: 'google/gemini-2.0-flash-exp:free',
+          tags: (m.tags || []).map((t) => t === 'Llama 3.3' ? 'Gemini 2.0' : t)
+        };
+      }
+      return m;
+    });
+
+    if (migrated && raw) {
+      localStorage.setItem(key, JSON.stringify(models));
+    }
+    return models;
   } catch (e) {
     return DEFAULT_MODELS;
   }
@@ -112,7 +131,25 @@ export const getCustomChatbots = () => {
   try {
     const key = getUserScopedKey(STORAGE_KEYS.CHATBOTS);
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : DEFAULT_CHATBOTS;
+    let chatbots = raw ? JSON.parse(raw) : DEFAULT_CHATBOTS;
+
+    // Auto-migrate any deprecated Llama 3.3 free chatbots
+    let migrated = false;
+    chatbots = chatbots.map((c) => {
+      if (c.model === 'meta-llama/llama-3.3-70b-instruct:free' || c.model?.includes('llama-3.3-70b-instruct:free')) {
+        migrated = true;
+        return {
+          ...c,
+          model: 'google/gemini-2.0-flash-exp:free'
+        };
+      }
+      return c;
+    });
+
+    if (migrated && raw) {
+      localStorage.setItem(key, JSON.stringify(chatbots));
+    }
+    return chatbots;
   } catch (e) {
     return DEFAULT_CHATBOTS;
   }

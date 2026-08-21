@@ -254,7 +254,7 @@ export const sendOpenRouterChat = async ({
   if (!activeKey) {
     return {
       success: false,
-      error: '⚠️ Chiave API OpenRouter mancante! Genera una chiave gratuita (a costo 0.00€) su openrouter.ai/keys e incollala nelle Impostazioni.'
+      error: '⚠️ Chiave API OpenRouter mancante! Inserisci una chiave API gratuita (da openrouter.ai/keys) nelle Impostazioni.'
     };
   }
 
@@ -272,35 +272,47 @@ export const sendOpenRouterChat = async ({
   };
 
   try {
-    let currentModel = model;
+    let currentModel = model || 'google/gemini-2.0-flash-exp:free';
     
     // Automatically sanitize deprecated model slugs
-    if (currentModel === 'meta-llama/llama-3.3-70b-instruct:free') {
+    if (currentModel.includes('llama-3.3-70b-instruct:free') || currentModel.includes('llama-3.3-70b:free')) {
       currentModel = 'google/gemini-2.0-flash-exp:free';
     }
 
-    let response;
-    try {
-      response = await executeRequest(currentModel);
-    } catch (primaryErr) {
-      const errMsg = primaryErr.response?.data?.error?.message || primaryErr.message || '';
-      const isUnavailableFree = errMsg.toLowerCase().includes('unavailable for free') || 
-                                errMsg.toLowerCase().includes('use this slug instead') ||
-                                primaryErr.response?.status === 404;
+    let response = null;
+    let successfulModel = currentModel;
+    const candidateModels = allowFallback 
+      ? [currentModel, ...RELIABLE_FREE_FALLBACKS.filter((f) => f !== currentModel)]
+      : [currentModel];
 
-      if (allowFallback && isUnavailableFree) {
-        // Find a fallback model different from currentModel
-        const fallback = RELIABLE_FREE_FALLBACKS.find((f) => f !== currentModel) || 'google/gemini-2.0-flash-exp:free';
-        console.warn(`[OpenRouter Fallback] Il modello "${currentModel}" non è disponibile gratis. Fallback su "${fallback}"...`);
-        
-        response = await executeRequest(fallback);
-        currentModel = fallback;
-      } else {
-        throw primaryErr;
+    let lastError = null;
+    for (const targetModel of candidateModels) {
+      try {
+        response = await executeRequest(targetModel);
+        successfulModel = targetModel;
+        break; // Successfully got response
+      } catch (reqErr) {
+        lastError = reqErr;
+        const errMsg = reqErr.response?.data?.error?.message || reqErr.message || '';
+        const isFallbackable = errMsg.toLowerCase().includes('unavailable for free') || 
+                              errMsg.toLowerCase().includes('use this slug instead') ||
+                              errMsg.toLowerCase().includes('rate limit') ||
+                              reqErr.response?.status === 404 ||
+                              reqErr.response?.status === 400 ||
+                              reqErr.response?.status === 429;
+
+        if (!allowFallback || !isFallbackable) {
+          break; // Stop immediately for auth/key errors (401)
+        }
+        console.warn(`[OpenRouter Fallback] Il modello "${targetModel}" non è disponibile. Tentativo con fallback...`);
       }
     }
 
-    if (response.data && response.data.choices && response.data.choices[0]) {
+    if (!response && lastError) {
+      throw lastError;
+    }
+
+    if (response && response.data && response.data.choices && response.data.choices[0]) {
       const rawContent = response.data.choices[0].message.content || '';
       
       // Auto-extract and save any memories learned by AI
@@ -316,7 +328,7 @@ export const sendOpenRouterChat = async ({
         content: cleanContent,
         rawContent,
         savedMemories,
-        model: response.data.model || currentModel,
+        model: response.data.model || successfulModel,
         usage: response.data.usage || {}
       };
     } else {
@@ -333,7 +345,7 @@ export const sendOpenRouterChat = async ({
     if (status === 401 || rawMsg.toLowerCase().includes('user not found') || rawMsg.toLowerCase().includes('api key')) {
       userFriendlyMsg = 'Chiave API OpenRouter non valida. Verifica la tua chiave su openrouter.ai/keys e incollala nelle Impostazioni.';
     } else if (rawMsg.toLowerCase().includes('unavailable for free') || rawMsg.toLowerCase().includes('use this slug instead')) {
-      userFriendlyMsg = 'Questo modello non è più disponibile gratuitamente (:free) su OpenRouter. Seleziona uno dei modelli 100% gratuiti attivi come Google Gemini 2.0 Flash, DeepSeek R1 o Qwen 2.5 Coder.';
+      userFriendlyMsg = 'Questo modello non è più disponibile gratuitamente (:free) su OpenRouter. È stato selezionato automaticamente Google Gemini 2.0 Flash o DeepSeek R1.';
     } else if (status === 402 || rawMsg.toLowerCase().includes('credits') || rawMsg.toLowerCase().includes('payment')) {
       userFriendlyMsg = 'Crediti insufficienti per questo modello PRO a pagamento. Per usare modelli gratuiti a costo €0.00, seleziona Google Gemini 2.0 Flash (:free), DeepSeek R1 (:free) o Qwen Coder (:free).';
     } else if (status === 429) {

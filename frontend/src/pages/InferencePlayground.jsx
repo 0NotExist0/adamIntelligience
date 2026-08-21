@@ -25,8 +25,10 @@ import AgentPipelineBadge from '../components/AgentPipelineBadge';
 import { useToast } from '../components/Toast';
 
 export default function InferencePlayground({ initialModel }) {
-  const { addToast } = useToast();
-  const [selectedModel, setSelectedModel] = useState(initialModel || 'google/gemini-2.0-flash-exp:free');
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const raw = initialModel || 'google/gemini-2.0-flash-exp:free';
+    return raw.includes('llama-3.3-70b-instruct:free') ? 'google/gemini-2.0-flash-exp:free' : raw;
+  });
   const [customModel, setCustomModel] = useState('');
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [messages, setMessages] = useState([
