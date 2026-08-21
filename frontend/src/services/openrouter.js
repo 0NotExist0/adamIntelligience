@@ -241,6 +241,13 @@ export const sendOpenRouterChat = async ({
     }
   }
 
+  if (!activeKey) {
+    return {
+      success: false,
+      error: '⚠️ Chiave API OpenRouter mancante! I modelli contrassegnati con ":free" (DeepSeek R1, Llama 3.3, Gemini 2.0) sono al 100% GRATUITI a costo €0.00, ma OpenRouter richiede comunque una Chiave API gratuita per autorizzare le richieste. Puoi generarne una in 30 secondi gratis su openrouter.ai/keys (non serve carta di credito) e incollarla qui cliccando su "Impostazioni & Chiavi".'
+    };
+  }
+
   try {
     const response = await axios.post(
       `${OPENROUTER_API_BASE}/chat/completions`,
@@ -279,10 +286,25 @@ export const sendOpenRouterChat = async ({
       };
     }
   } catch (err) {
-    const errDetail = err.response?.data?.error?.message || err.response?.data?.detail || err.message;
+    const status = err.response?.status;
+    const rawMsg = err.response?.data?.error?.message || err.response?.data?.detail || err.message || '';
+
+    let userFriendlyMsg = rawMsg;
+    if (status === 401 || rawMsg.toLowerCase().includes('user not found') || rawMsg.toLowerCase().includes('api key')) {
+      userFriendlyMsg = 'Chiave API OpenRouter non valida o non inserita. Genera una chiave gratuita su openrouter.ai/keys (a costo 0€) e salvala nell\'app.';
+    } else if (status === 402 || rawMsg.toLowerCase().includes('credits') || rawMsg.toLowerCase().includes('payment')) {
+      if (model.includes(':free')) {
+        userFriendlyMsg = 'Questo modello è gratuito (:free), ma i server gratuiti di OpenRouter sono temporaneamente congestionati dal traffico mondiale o il limite orario gratuito del tuo account è stato raggiunto. Prova a selezionare un altro modello gratuito (es. Google Gemini 2.0 Flash o DeepSeek R1).';
+      } else {
+        userFriendlyMsg = `Il modello "${model}" è un modello PRO a pagamento e richiede crediti sul tuo account OpenRouter. Se desideri usare modelli a costo zero, seleziona uno dei modelli con il tag ":free" (es. Llama 3.3 70B :free, DeepSeek R1 :free, Gemini 2.0 :free).`;
+      }
+    } else if (status === 429) {
+      userFriendlyMsg = 'Limite di richieste al minuto raggiunto sui nodi gratuiti di OpenRouter. Riprova tra pochi secondi o passa a un altro modello gratuito.';
+    }
+
     return {
       success: false,
-      error: `Errore OpenRouter: ${errDetail}`
+      error: `Errore OpenRouter: ${userFriendlyMsg}`
     };
   }
 };
