@@ -8,7 +8,6 @@ import ModelsManager from './pages/ModelsManager';
 import ChatbotsManager from './pages/ChatbotsManager';
 import DatasetsManager from './pages/DatasetsManager';
 import InferencePlayground from './pages/InferencePlayground';
-import StrikesManager from './pages/StrikesManager';
 import SettingsManager from './pages/SettingsManager';
 
 import CreateModelModal from './components/CreateModelModal';
@@ -207,10 +206,6 @@ function DashboardApp() {
             <InferencePlayground
               initialModel={playgroundInitialModel}
             />
-          )}
-
-          {activeTab === 'strikes' && (
-            <StrikesManager />
           )}
 
           {activeTab === 'settings' && (

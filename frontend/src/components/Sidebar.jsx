@@ -8,16 +8,14 @@ import {
   HardDrive, 
   Settings, 
   Sparkles, 
-  ExternalLink, 
-  FolderDown, 
-  Brain,
-  Megaphone
+  ExternalLink,
+  FolderDown,
+  Brain
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, onOpenMemory, stats }) {
   const navItems = [
     { id: 'dashboard', label: 'Panoramica Hub', icon: LayoutDashboard, badge: null },
-    { id: 'strikes', label: 'Monitor Scioperi', icon: Megaphone, badge: 'LIVE' },
     { id: 'models', label: 'Modelli & Drive', icon: Cpu, badge: stats?.modelsCount || null },
     { id: 'chatbots', label: 'Chatbot Studio', icon: Bot, badge: stats?.chatbotsCount || null },
     { id: 'datasets', label: 'Dataset di Training', icon: Database, badge: stats?.datasetsCount || null },
