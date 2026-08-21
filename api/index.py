@@ -1,0 +1,276 @@
+import os
+import json
+import re
+import urllib.parse
+from typing import List, Dict, Any, Optional
+import httpx
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+app = FastAPI(title="AI Studio Pro Vercel Serverless API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+# --- Models ---
+class AgentAnalyzeRequest(BaseModel):
+    prompt: str
+
+class AgentSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+class AgentChatRequest(BaseModel):
+    prompt: str
+    messages: Optional[List[Dict[str, str]]] = None
+    model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    saved_memories: Optional[List[Dict[str, Any]]] = None
+    force_web_search: bool = False
+
+class InferenceChatRequest(BaseModel):
+    model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    messages: List[Dict[str, str]]
+    max_tokens: int = 1024
+    temperature: float = 0.7
+
+class SaveKeyRequest(BaseModel):
+    api_key: str
+
+# In-memory storage for serverless session
+_OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+
+# --- Helper Functions ---
+async def search_duckduckgo_lite(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    url = "https://html.duckduckgo.com/html/"
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://html.duckduckgo.com/"
+    }
+    data = {"q": query, "b": ""}
+    results = []
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            resp = await client.post(url, headers=headers, data=data)
+            if resp.status_code == 200:
+                html = resp.text
+                blocks = re.findall(r'<div class="result results_links results_links_deep web-result ">([\s\S]*?)</div>\s*</div>', html)
+                for block in blocks[:max_results]:
+                    snippet_match = re.search(r'<a class="result__snippet"[^>]*>([\s\S]*?)</a>', block)
+                    raw_url = ""
+                    title = ""
+                    snippet = ""
+                    t_m = re.search(r'<h2 class="result__title">[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>', block)
+                    if t_m:
+                        raw_url = t_m.group(1)
+                        title = re.sub(r'<[^>]+>', '', t_m.group(2)).strip()
+                    if snippet_match:
+                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip()
+                    if "uddg=" in raw_url:
+                        m = re.search(r'uddg=([^&]+)', raw_url)
+                        if m:
+                            raw_url = urllib.parse.unquote(m.group(1))
+                    if title:
+                        results.append({
+                            "title": title,
+                            "snippet": snippet,
+                            "url": raw_url,
+                            "source": "DuckDuckGo Web"
+                        })
+    except Exception:
+        pass
+    return results
+
+async def search_wikipedia(query: str, max_results: int = 2) -> List[Dict[str, str]]:
+    results = []
+    clean_q = urllib.parse.quote(query)
+    for lang in ["it", "en"]:
+        url = f"https://{lang}.wikipedia.org/w/api.php?action=opensearch&search={clean_q}&limit={max_results}&namespace=0&format=json"
+        headers = {"User-Agent": USER_AGENT}
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if len(data) >= 4 and len(data[1]) > 0:
+                        titles, snippets, urls = data[1], data[2], data[3]
+                        for i in range(len(titles)):
+                            if i < len(snippets) and snippets[i]:
+                                results.append({
+                                    "title": titles[i],
+                                    "snippet": snippets[i],
+                                    "url": urls[i] if i < len(urls) else f"https://{lang}.wikipedia.org/wiki/{titles[i]}",
+                                    "source": f"Wikipedia ({lang.upper()})"
+                                })
+        except Exception:
+            pass
+        if len(results) >= max_results:
+            break
+    return results
+
+async def perform_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+    if not query or not query.strip():
+        return {"query": query, "results": [], "summary_text": "Nessuna ricerca richiesta."}
+    
+    clean_query = query.strip()
+    ddg = await search_duckduckgo_lite(clean_query, max_results=max_results)
+    wiki = await search_wikipedia(clean_query, max_results=2)
+    
+    all_results = []
+    seen = set()
+    for item in ddg + wiki:
+        u = item.get("url", "")
+        if u and u not in seen:
+            seen.add(u)
+            all_results.append(item)
+
+    if not all_results:
+        summary_text = f"Ricerca Web per '{clean_query}': Nessun risultato rilevante reperito."
+    else:
+        lines = [f"### 🌐 RISULTATI VERIFICATI DAL WEB (Query: '{clean_query}'):"]
+        for idx, r in enumerate(all_results[:max_results], 1):
+            lines.append(f"{idx}. **{r['title']}** [{r.get('source', 'Web')}]")
+            if r.get("snippet"):
+                lines.append(f"   *Estratto*: {r['snippet']}")
+            if r.get("url"):
+                lines.append(f"   *Link*: {r['url']}")
+        summary_text = "\n".join(lines)
+
+    return {
+        "query": clean_query,
+        "results_count": len(all_results),
+        "results": all_results[:max_results],
+        "summary_text": summary_text
+    }
+
+async def call_openrouter(messages: List[Dict[str, str]], model: str, temperature: float = 0.7, max_tokens: int = 1024) -> Dict[str, Any]:
+    headers = {
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://aistudio.vercel.app",
+        "X-Title": "AI Studio Pro Vercel"
+    }
+    if _OPENROUTER_API_KEY:
+        headers["Authorization"] = f"Bearer {_OPENROUTER_API_KEY}"
+    
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.post(f"{OPENROUTER_API_BASE}/chat/completions", headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return {"success": True, "content": content, "model": data.get("model", model), "usage": data.get("usage", {})}
+            else:
+                return {"success": False, "error": f"OpenRouter Error ({resp.status_code}): {resp.text}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# --- API Endpoints ---
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "platform": "Vercel Serverless"}
+
+@app.get("/api/auth/status")
+async def auth_status():
+    return {"authenticated": True, "auth_type": "google_ready"}
+
+@app.get("/api/openrouter/status")
+async def openrouter_status():
+    return {"configured": bool(_OPENROUTER_API_KEY), "api_key_masked": f"{_OPENROUTER_API_KEY[:6]}..." if _OPENROUTER_API_KEY else ""}
+
+@app.post("/api/openrouter/save-key")
+async def save_openrouter_key(req: SaveKeyRequest):
+    global _OPENROUTER_API_KEY
+    _OPENROUTER_API_KEY = req.api_key.strip()
+    return {"success": True}
+
+@app.post("/api/agent/web-search")
+async def agent_web_search(req: AgentSearchRequest):
+    return await perform_web_search(req.query, max_results=req.max_results)
+
+@app.post("/api/agent/analyze-prompt")
+async def agent_analyze_prompt(req: AgentAnalyzeRequest):
+    p = req.prompt.lower()
+    is_code = any(k in p for k in ["codice", "script", "python", "javascript", "react", "html", "css", "sql", "funzione", "regex"])
+    is_math = any(k in p for k in ["calcola", "quanto fa", "formula", "matematica", "percentuale"])
+    is_creative = any(k in p for k in ["inventa", "racconta", "storia", "poesia", "creativo"])
+    is_factual = any(k in p for k in ["chi è", "cosa è", "quando", "dove", "notizie", "ultim", "2026", "2025", "aggiornat"])
+    
+    temp = 0.1 if (is_code or is_math) else (0.85 if is_creative else (0.2 if is_factual else 0.5))
+    tokens = 2048 if is_code else (512 if len(req.prompt) < 40 else 1024)
+    needs_web = is_factual or any(k in p for k in ["news", "ultim", "oggi", "prezzo", "versione"])
+    
+    return {
+        "task_type": "code" if is_code else ("math_logic" if is_math else ("creative_writing" if is_creative else "factual_query")),
+        "temperature": temp,
+        "max_tokens": tokens,
+        "needs_web_search": needs_web,
+        "search_query": req.prompt[:80],
+        "reasoning_strategy": "Analisi logica step-by-step con validazione e priorità alla memoria locale."
+    }
+
+@app.post("/api/inference/chat")
+@app.post("/api/openrouter/chat")
+async def inference_chat(req: InferenceChatRequest):
+    return await call_openrouter(messages=req.messages, model=req.model, temperature=req.temperature, max_tokens=req.max_tokens)
+
+@app.post("/api/agent/chat")
+async def agent_chat(req: AgentChatRequest):
+    # 1. Analyze prompt
+    analysis = await agent_analyze_prompt(AgentAnalyzeRequest(prompt=req.prompt))
+    temp = analysis["temperature"]
+    tokens = analysis["max_tokens"]
+    
+    # 2. Web search if needed
+    web_res = {"results": [], "summary_text": ""}
+    if req.force_web_search or analysis["needs_web_search"]:
+        web_res = await perform_web_search(analysis["search_query"] or req.prompt, max_results=4)
+        
+    # 3. Format memory context (Priority 1)
+    memories = req.saved_memories or []
+    mem_lines = [f"{i+1}. [{m.get('category', 'Regola')}] {m.get('text', '')}" for i, m in enumerate(memories)]
+    mem_block = "\n".join(mem_lines) if mem_lines else "Nessun dato salvato."
+    
+    # 4. Strict Hierarchy System Prompt
+    system_prompt = f"""Sei un Agente AI di Massima Precisione.
+GERARCHIA DELLE FONTI:
+1. PRIORITÀ 1 (ASSOLUTA): INFORMAZIONI SALVATE NEL VAULT UTENTE:
+{mem_block}
+(Qualsiasi informazione salvata sopra sovrascrive qualsiasi dato contrario trovato sul web o nei modelli).
+
+2. PRIORITÀ 2: VERIFICA WEB IN TEMPO REALE:
+{web_res.get('summary_text', 'Nessuna ricerca attiva.')}
+
+Fornisci una risposta esatta, chiara, verificata e priva di dubbi."""
+
+    history = req.messages or [{"role": "user", "content": req.prompt}]
+    full_messages = [{"role": "system", "content": system_prompt}] + [m for m in history if m.get("role") != "system"]
+    
+    gen = await call_openrouter(messages=full_messages, model=req.model, temperature=temp, max_tokens=tokens)
+    
+    return {
+        "success": gen.get("success", False),
+        "content": gen.get("content", ""),
+        "error": gen.get("error"),
+        "meta": analysis,
+        "calibrated_temperature": temp,
+        "calibrated_max_tokens": tokens,
+        "web_sources": web_res.get("results", []),
+        "web_search_performed": bool(web_res.get("results")),
+        "memory_applied_count": len(memories)
+    }
