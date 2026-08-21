@@ -6,6 +6,11 @@ Una moderna e potente Web Application per creare, testare e gestire modelli di I
 
 ## 🌟 Caratteristiche Principali
 
+- **🧠 Agente AI con Calibrazione Dinamica & Fact-Checking**:
+  - **Meta-Analisi del Prompt**: Calcolo dinamico e autonomo di **Temperatura** e **Max Tokens** ottimali prima della risposta.
+  - **Priorità Assoluta Memory Vault**: Le regole e i fatti salvati localmente prevalgono su qualsiasi informazione contraria trovata sul web o nei modelli.
+  - **Verifica Web in Tempo Reale**: Ricerca automatica con DuckDuckGo e Wikipedia per fact-checking live privo di dubbi.
+  - **Badge Ispettore Pipeline**: Visualizzazione dettagliata delle fonti, parametri calibrati e confidenza 100%.
 - **🤖 100+ Modelli AI OpenRouter**:
   - `Meta Llama 3.3 70B Instruct` (100% FREE)
   - `DeepSeek R1 Reasoning` (100% FREE)

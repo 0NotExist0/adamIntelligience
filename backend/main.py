@@ -491,6 +491,45 @@ async def copilot_chat(req: CopilotChatRequest):
     )
     return result
 
+from backend.web_search import WebSearchEngine
+from backend.agent_pipeline import AgentPipeline
+
+class AgentAnalyzeRequest(BaseModel):
+    prompt: str
+
+class AgentSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+class AgentChatRequest(BaseModel):
+    prompt: str
+    messages: Optional[List[Dict[str, str]]] = None
+    model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    saved_memories: Optional[List[Dict[str, Any]]] = None
+    force_web_search: bool = False
+
+# --- AGENT AI ROUTES (DYNAMIC CALIBRATION, WEB SEARCH & MEMORY HIERARCHY) ---
+@app.post("/api/agent/analyze-prompt")
+async def agent_analyze_prompt(req: AgentAnalyzeRequest):
+    pipeline = AgentPipeline()
+    return await pipeline.analyze_prompt(req.prompt)
+
+@app.post("/api/agent/web-search")
+async def agent_web_search(req: AgentSearchRequest):
+    search_engine = WebSearchEngine()
+    return await search_engine.search(req.query, max_results=req.max_results)
+
+@app.post("/api/agent/chat")
+async def agent_chat(req: AgentChatRequest):
+    pipeline = AgentPipeline()
+    return await pipeline.run(
+        prompt=req.prompt,
+        messages=req.messages,
+        model=req.model,
+        saved_memories=req.saved_memories,
+        force_web_search=req.force_web_search
+    )
+
 # --- SERVE FRONTEND STATIC FILES ---
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

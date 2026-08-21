@@ -10,10 +10,13 @@ import {
   Loader2, 
   Cpu, 
   HardDrive,
-  Download
+  Download,
+  Globe
 } from 'lucide-react';
 import { POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import { runAgentChatPipeline } from '../services/agentPipeline';
 import ModelPickerModal from './ModelPickerModal';
+import AgentPipelineBadge from './AgentPipelineBadge';
 import { downloadJSONFile } from '../services/storage';
 import { useToast } from './Toast';
 
@@ -23,13 +26,14 @@ export default function ChatbotModal({ bot, onClose }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: `Ciao! Sono **${bot.name}** (${bot.avatar || '🤖'}), potenziato da **OpenRouter**.\n\nCome posso aiutarti oggi?`
+      content: `Ciao! Sono **${bot.name}** (${bot.avatar || '🤖'}), potenziato da **OpenRouter** con auto-calibrazione parametri e fact-checking web.\n\nCome posso aiutarti oggi?`
     }
   ]);
   const [inputPrompt, setInputPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(bot.model || bot.baseModel || 'meta-llama/llama-3.3-70b-instruct:free');
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [agentStep, setAgentStep] = useState('');
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -47,26 +51,31 @@ export default function ChatbotModal({ bot, onClose }) {
     setMessages(newMessages);
     setInputPrompt('');
     setLoading(true);
+    setAgentStep('Analisi prompt...');
 
     try {
-      const apiMessages = [
-        { role: 'system', content: bot.systemPrompt || 'Sei un assistente AI amichevole, intelligente e utile.' },
-        ...newMessages
-          .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
-          .map((m) => ({ role: m.role, content: m.content }))
-      ];
+      const history = newMessages
+        .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
+        .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await sendOpenRouterChat({
+      const res = await runAgentChatPipeline({
+        prompt: inputPrompt.trim(),
+        messages: [
+          { role: 'system', content: bot.systemPrompt || 'Sei un assistente AI amichevole, intelligente e utile.' },
+          ...history
+        ],
         model: selectedModel,
-        messages: apiMessages,
-        max_tokens: bot.maxTokens || 1024,
-        temperature: bot.temperature || 0.7
+        onProgressStep: (s) => setAgentStep(s.label)
       });
 
       if (res.success) {
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: res.content }
+          { 
+            role: 'assistant', 
+            content: res.content,
+            agentTrace: res.agentTrace
+          }
         ]);
       } else {
         setMessages((prev) => [
@@ -81,6 +90,7 @@ export default function ChatbotModal({ bot, onClose }) {
       ]);
     } finally {
       setLoading(false);
+      setAgentStep('');
     }
   };
 
@@ -207,6 +217,11 @@ export default function ChatbotModal({ bot, onClose }) {
                 >
                   <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
 
+                  {/* Agent Trace Badge */}
+                  {!isUser && msg.agentTrace && (
+                    <AgentPipelineBadge agentTrace={msg.agentTrace} />
+                  )}
+
                   {!isUser && (
                     <button
                       onClick={() => handleCopy(msg.content, index)}
@@ -228,11 +243,11 @@ export default function ChatbotModal({ bot, onClose }) {
           {loading && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
-                <Bot className="w-4 h-4" />
+                <Bot className="w-4 h-4 animate-bounce" />
               </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-xs text-purple-300 flex items-center gap-2">
+              <div className="bg-slate-900 border border-purple-500/30 rounded-2xl p-3 text-xs text-purple-300 flex items-center gap-2 shadow-lg">
                 <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                <span>{bot.name} sta rispondendo...</span>
+                <span>{agentStep || `${bot.name} sta rispondendo...`}</span>
               </div>
             </div>
           )}

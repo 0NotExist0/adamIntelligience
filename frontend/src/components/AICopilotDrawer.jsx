@@ -10,9 +10,12 @@ import {
   Copy, 
   Check, 
   HardDrive,
-  Code
+  Code,
+  Globe
 } from 'lucide-react';
 import { POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import { runAgentChatPipeline } from '../services/agentPipeline';
+import AgentPipelineBadge from './AgentPipelineBadge';
 import { useToast } from './Toast';
 
 const COPILOT_SYSTEM_PROMPT = `Sei l'Assistente AI Copilot Ufficiale di "AI Studio Pro" (OpenRouter & Google Drive).
@@ -69,6 +72,7 @@ export default function AICopilotDrawer({
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [agentStep, setAgentStep] = useState('');
   const messagesEndRef = useRef(null);
 
   const quickPrompts = [
@@ -93,20 +97,21 @@ export default function AICopilotDrawer({
     setMessages(newMessages);
     setInputPrompt('');
     setLoading(true);
+    setAgentStep('Calibrazione parametri...');
 
     try {
-      const apiMessages = [
-        { role: 'system', content: COPILOT_SYSTEM_PROMPT },
-        ...newMessages
-          .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
-          .map((m) => ({ role: m.role, content: m.content }))
-      ];
+      const history = newMessages
+        .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
+        .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await sendOpenRouterChat({
+      const res = await runAgentChatPipeline({
+        prompt: textToSend.trim(),
+        messages: [
+          { role: 'system', content: COPILOT_SYSTEM_PROMPT },
+          ...history
+        ],
         model: selectedModel,
-        messages: apiMessages,
-        max_tokens: 1500,
-        temperature: 0.7
+        onProgressStep: (s) => setAgentStep(s.label)
       });
 
       if (res.success) {
@@ -136,7 +141,11 @@ export default function AICopilotDrawer({
 
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: cleanContent || content }
+          { 
+            role: 'assistant', 
+            content: cleanContent || content,
+            agentTrace: res.agentTrace
+          }
         ]);
       } else {
         setMessages((prev) => [
@@ -151,6 +160,7 @@ export default function AICopilotDrawer({
       ]);
     } finally {
       setLoading(false);
+      setAgentStep('');
     }
   };
 
@@ -221,6 +231,11 @@ export default function AICopilotDrawer({
               >
                 <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
 
+                {/* Agent Trace Badge */}
+                {!isUser && msg.agentTrace && (
+                  <AgentPipelineBadge agentTrace={msg.agentTrace} />
+                )}
+
                 {!isUser && (
                   <button
                     onClick={() => handleCopy(msg.content, index)}
@@ -237,11 +252,11 @@ export default function AICopilotDrawer({
         {loading && (
           <div className="flex gap-2.5 justify-start">
             <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5" />
+              <Bot className="w-3.5 h-3.5 animate-bounce" />
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs text-purple-300 flex items-center gap-2">
+            <div className="bg-slate-950 border border-purple-500/30 rounded-2xl p-3 text-xs text-purple-300 flex items-center gap-2 shadow-lg">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
-              <span>Copilot sta elaborando...</span>
+              <span>{agentStep || 'Copilot sta elaborando...'}</span>
             </div>
           </div>
         )}
