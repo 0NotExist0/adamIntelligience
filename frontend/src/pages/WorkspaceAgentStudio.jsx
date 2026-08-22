@@ -225,10 +225,26 @@ export default function WorkspaceAgentStudio() {
   const handleConfirmPathClick = async () => {
     const path = folderPath.trim();
     if (!path) {
-      addToast('Inserisci il percorso di una cartella di lavoro', 'warning');
+      addToast('Inserisci o seleziona una cartella di lavoro', 'warning');
       return;
     }
-    await handleLoadFolder(path);
+
+    // 1. Check if local Python backend is available
+    try {
+      const res = await validateAndSetWorkspaceFolder(path);
+      if (res.success && !res.is_serverless) {
+        await handleLoadFolder(path);
+        return;
+      }
+    } catch (e) {}
+
+    // 2. On Web / Vercel: open directory picker to grant real PC disk read/write permissions
+    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      addToast('Seleziona la cartella dal popup per autorizzare la lettura e scrittura reale sul tuo PC!', 'info');
+      await handleOpenNativeFolderDialog();
+    } else {
+      await handleLoadFolder(path);
+    }
   };
 
   const [isDirBrowserOpen, setIsDirBrowserOpen] = useState(false);
@@ -423,9 +439,26 @@ export default function WorkspaceAgentStudio() {
     const taskText = customPrompt || inputPrompt;
     if (!taskText.trim() || loading) return;
 
-    if (!folderPath) {
+    if (!folderPath && !getActiveDirectoryHandle()) {
       addToast('Specifica prima una cartella di lavoro target su cui operare!', 'warning');
       return;
+    }
+
+    // If running in web/serverless mode without handle, prompt user to select the folder for direct PC write
+    const currentHandle = getActiveDirectoryHandle();
+    if (!currentHandle && typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      try {
+        const info = await getWorkspaceInfo();
+        if (info && info.is_serverless) {
+          addToast('Seleziona la cartella dal popup per salvare i file direttamente sul tuo PC!', 'info');
+          const pickRes = await pickDirectoryNative();
+          if (pickRes.success && pickRes.handle) {
+            setFolderPath(pickRes.name);
+            const tree = await buildTreeFromDirectoryHandle(pickRes.handle);
+            setFileTree(tree);
+          }
+        }
+      } catch (err) {}
     }
 
     const userMessage = { role: 'user', content: taskText.trim() };

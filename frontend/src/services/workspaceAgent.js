@@ -89,69 +89,166 @@ export const validateAndSetWorkspaceFolder = async (folderPath) => {
 };
 
 /**
+ * Normalizes relative path, stripping drive letters (C:\...) and base folder prefixes
+ */
+export const normalizeRelativePath = (rawPath, baseFolderPath = '', baseFolderName = '') => {
+  if (!rawPath) return '';
+  let p = String(rawPath).trim().replace(/^["']|["']$/g, '');
+  p = p.replace(/\\/g, '/');
+
+  // Strip exact baseFolderPath if present
+  if (baseFolderPath) {
+    const cleanBase = baseFolderPath.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (p.toLowerCase().startsWith(cleanBase.toLowerCase() + '/')) {
+      p = p.slice(cleanBase.length + 1);
+    }
+  }
+
+  // Strip exact baseFolderName if present at beginning
+  if (baseFolderName) {
+    const cleanName = baseFolderName.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (p.toLowerCase().startsWith(cleanName.toLowerCase() + '/')) {
+      p = p.slice(cleanName.length + 1);
+    }
+  }
+
+  // If path still contains Windows drive letter like C:/Users/.../Prova/file.txt
+  if (/^[a-zA-Z]:\//i.test(p)) {
+    const parts = p.split('/');
+    if (baseFolderName) {
+      const idx = parts.map((x) => x.toLowerCase()).lastIndexOf(baseFolderName.toLowerCase());
+      if (idx >= 0 && idx < parts.length - 1) {
+        p = parts.slice(idx + 1).join('/');
+      } else {
+        p = parts[parts.length - 1];
+      }
+    } else {
+      p = parts[parts.length - 1];
+    }
+  }
+
+  return p.replace(/^\/+/, '');
+};
+
+/**
  * Gets hierarchical directory tree of target folder
  */
 export const getWorkspaceTree = async (folderPath) => {
-  try {
-    const res = await axios.get('/api/workspace/tree', {
-      params: { folder_path: folderPath }
-    });
-    return res.data.tree || [];
-  } catch (err) {
-    console.error('Error fetching workspace tree:', err);
-    return [];
+  if (activeDirectoryHandle) {
+    try {
+      const tree = await buildTreeFromDirectoryHandle(activeDirectoryHandle);
+      if (tree && tree.length > 0) return tree;
+    } catch (e) {}
   }
+  for (const url of ['http://127.0.0.1:8000/api/workspace/tree', '/api/workspace/tree']) {
+    try {
+      const res = await axios.get(url, {
+        params: { folder_path: folderPath },
+        timeout: 4000
+      });
+      if (res.data && res.data.tree && !res.data.is_serverless) {
+        return res.data.tree;
+      }
+    } catch (e) {}
+  }
+  return [];
 };
 
 /**
  * Reads file content from target workspace folder
  */
 export const getWorkspaceFileContent = async (folderPath, relativePath) => {
-  try {
-    const res = await axios.get('/api/workspace/file-content', {
-      params: {
-        folder_path: folderPath,
-        relative_path: relativePath
-      }
-    });
-    return res.data;
-  } catch (err) {
-    const msg = err.response?.data?.detail || err.message;
-    return { success: false, error: msg };
+  const cleanRel = normalizeRelativePath(relativePath, folderPath, activeDirectoryHandle?.name);
+  if (activeDirectoryHandle) {
+    const res = await readFileFromDirectoryHandle(activeDirectoryHandle, cleanRel);
+    if (res.success) return res;
   }
+  for (const url of ['http://127.0.0.1:8000/api/workspace/file-content', '/api/workspace/file-content']) {
+    try {
+      const res = await axios.get(url, {
+        params: {
+          folder_path: folderPath,
+          relative_path: cleanRel
+        },
+        timeout: 4000
+      });
+      if (res.data && res.data.success && !res.data.is_serverless) {
+        return res.data;
+      }
+    } catch (e) {}
+  }
+  return { success: false, error: 'File non trovato o accesso negato' };
 };
 
 /**
  * Saves or creates file in target workspace folder
  */
 export const saveWorkspaceFile = async (folderPath, relativePath, content) => {
-  try {
-    const res = await axios.post('/api/workspace/save-file', {
-      folder_path: folderPath,
-      relative_path: relativePath,
-      content: content
-    });
-    return res.data;
-  } catch (err) {
-    const msg = err.response?.data?.detail || err.message;
-    return { success: false, error: msg };
+  const cleanRel = normalizeRelativePath(relativePath, folderPath, activeDirectoryHandle?.name);
+
+  // 1. If active directory handle exists, write directly to PC disk
+  if (activeDirectoryHandle) {
+    try {
+      const granted = await verifyAndRequestPermission(activeDirectoryHandle, true);
+      if (granted) {
+        const hRes = await writeFileToDirectoryHandle(activeDirectoryHandle, cleanRel, content);
+        if (hRes.success) {
+          return {
+            success: true,
+            path: cleanRel,
+            full_path: `${activeDirectoryHandle.name}/${cleanRel}`,
+            message: `File '${cleanRel}' salvato su disco in '${activeDirectoryHandle.name}'`
+          };
+        }
+      }
+    } catch (e) {}
   }
+
+  // 2. Try local Python backend (native Windows disk access)
+  for (const url of ['http://127.0.0.1:8000/api/workspace/save-file', '/api/workspace/save-file']) {
+    try {
+      const res = await axios.post(url, {
+        folder_path: folderPath,
+        relative_path: cleanRel,
+        content: content
+      }, { timeout: 4000 });
+      if (res.data && res.data.success && !res.data.is_serverless) {
+        return res.data;
+      }
+    } catch (err) {}
+  }
+
+  // 3. Fallback: download
+  downloadFileDirectly(cleanRel, content);
+  return {
+    success: true,
+    path: cleanRel,
+    downloaded: true,
+    message: `File '${cleanRel}' scaricato sul computer`
+  };
 };
 
 /**
  * Deletes file in target workspace folder
  */
 export const deleteWorkspaceFile = async (folderPath, relativePath) => {
-  try {
-    const res = await axios.post('/api/workspace/delete-file', {
-      folder_path: folderPath,
-      relative_path: relativePath
-    });
-    return res.data;
-  } catch (err) {
-    const msg = err.response?.data?.detail || err.message;
-    return { success: false, error: msg };
+  const cleanRel = normalizeRelativePath(relativePath, folderPath, activeDirectoryHandle?.name);
+  if (activeDirectoryHandle) {
+    const res = await deleteFileFromDirectoryHandle(activeDirectoryHandle, cleanRel);
+    if (res.success) return res;
   }
+  for (const url of ['http://127.0.0.1:8000/api/workspace/delete-file', '/api/workspace/delete-file']) {
+    try {
+      const res = await axios.post(url, {
+        folder_path: folderPath,
+        relative_path: cleanRel
+      }, { timeout: 4000 });
+      if (res.data && res.data.success && !res.data.is_serverless) {
+        return res.data;
+      }
+    } catch (e) {}
+  }
+  return { success: false, error: 'Impossibile eliminare il file' };
 };
 
 /**
@@ -549,13 +646,15 @@ export const cleanModelOutput = (text) => {
   return cleaned.trim();
 };
 
-export const extractPathArg = (rawArgs) => {
+export const extractPathArg = (rawArgs, baseFolderPath = '', baseFolderName = '') => {
   if (!rawArgs) return '';
   const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
-  if (pathMatch) return pathMatch[1].trim();
-  const quoteMatch = /["']([^"']+)["']/.exec(rawArgs);
-  if (quoteMatch) return quoteMatch[1].trim();
-  return rawArgs.replace(/[()]/g, '').trim();
+  let raw = pathMatch ? pathMatch[1].trim() : '';
+  if (!raw) {
+    const quoteMatch = /["']([^"']+)["']/.exec(rawArgs);
+    raw = quoteMatch ? quoteMatch[1].trim() : rawArgs.replace(/[()]/g, '').trim();
+  }
+  return normalizeRelativePath(raw, baseFolderPath, baseFolderName);
 };
 
 // Strips one layer of surrounding quotes (triple, double or single) from an argument value.
@@ -571,12 +670,12 @@ const unquoteArgValue = (raw) => {
   return s.replace(/^["']/, '');
 };
 
-export const extractWriteArgs = (rawArgs) => {
+export const extractWriteArgs = (rawArgs, baseFolderPath = '', baseFolderName = '') => {
   let path = 'nuovo_file.txt';
   let content = '';
   const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
   if (pathMatch) {
-    path = pathMatch[1].trim();
+    path = normalizeRelativePath(pathMatch[1].trim(), baseFolderPath, baseFolderName) || 'nuovo_file.txt';
   }
   // content is (by the tool contract) the LAST argument — take everything after `content=`
   // and strip its surrounding quotes. This preserves code containing quotes, commas and parens.
@@ -588,12 +687,12 @@ export const extractWriteArgs = (rawArgs) => {
   return { path, content };
 };
 
-export const extractEditArgs = (rawArgs) => {
+export const extractEditArgs = (rawArgs, baseFolderPath = '', baseFolderName = '') => {
   let path = '';
   let target = '';
   let replacement = '';
   const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
-  if (pathMatch) path = pathMatch[1].trim();
+  if (pathMatch) path = normalizeRelativePath(pathMatch[1].trim(), baseFolderPath, baseFolderName);
 
   const tIdx = rawArgs.search(/target\s*=/i);
   const rIdx = rawArgs.search(/replacement\s*=/i);
@@ -671,59 +770,57 @@ export const runBrowserWorkspaceAgentTask = async ({
   const currentHandle = dirHandle || activeDirectoryHandle;
   const cleanFolder = folderPath || currentHandle?.name || 'Cartella Locale';
 
-  // A browser DirectoryHandle only exposes the folder NAME (not a full path), so `folderPath`
-  // is a bare name in that mode. Only treat it as a real disk target for the backend bridge
-  // when it is an actual absolute path (C:\..., /..., \\server\share). Otherwise the picked
-  // handle is the authoritative target and the bridge must NOT be used (it would resolve the
-  // bare name relative to the backend's working directory and write to the wrong place).
   const isAbsolutePath = (p) => /^([a-zA-Z]:[\\/]|[\\/]{1,2})/.test((p || '').trim());
   const absoluteFolder = isAbsolutePath(folderPath) ? folderPath.trim() : '';
 
-  // Writes a file to disk using the correct target: backend direct disk write first,
-  // then browser directory handle, then browser download as fallback.
-  const writeFileToDisk = async (path, content) => {
+  // Writes a file to disk using the correct target: browser directory handle (direct PC disk),
+  // then local backend bridge, then browser download as fallback.
+  const writeFileToDisk = async (rawPath, content) => {
+    const cleanRelPath = normalizeRelativePath(rawPath, folderPath, currentHandle?.name) || 'file.txt';
     const targetDir = folderPath || absoluteFolder || cleanFolder;
 
-    // 1. Direct Backend Disk Write (Native Python Agent on PC)
+    // 1. Browser DirectoryHandle (Direct physical write into the selected folder on the user's PC)
+    if (currentHandle) {
+      try {
+        const granted = await verifyAndRequestPermission(currentHandle, true);
+        if (granted) {
+          const res = await writeFileToDirectoryHandle(currentHandle, cleanRelPath, content);
+          if (res.success) {
+            return {
+              written: true,
+              output: `File '${cleanRelPath}' salvato direttamente nella cartella '${currentHandle.name}' sul tuo disco PC!`
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('DirectoryHandle write failed:', e);
+      }
+    }
+
+    // 2. Direct Local Backend Disk Write (Native Python Agent on PC)
     if (targetDir) {
-      for (const url of ['/api/workspace/save-file', 'http://127.0.0.1:8000/api/workspace/save-file']) {
+      for (const url of ['http://127.0.0.1:8000/api/workspace/save-file', '/api/workspace/save-file']) {
         try {
           const bridgeRes = await axios.post(url, {
             folder_path: targetDir,
-            relative_path: path,
+            relative_path: cleanRelPath,
             content: content
-          }, { timeout: 10000 });
-          if (bridgeRes.data && bridgeRes.data.success) {
+          }, { timeout: 4000 });
+          if (bridgeRes.data && bridgeRes.data.success && !bridgeRes.data.is_serverless) {
             return {
               written: true,
-              output: `File '${path}' salvato direttamente sul disco in '${bridgeRes.data.full_path || targetDir}'!`
+              output: `File '${cleanRelPath}' salvato direttamente sul disco in '${bridgeRes.data.full_path || targetDir}'!`
             };
           }
         } catch (e) {}
       }
     }
 
-    // 2. Browser DirectoryHandle (when user selected directory via browser picker)
-    if (currentHandle) {
-      try {
-        const granted = await verifyAndRequestPermission(currentHandle, true);
-        if (granted) {
-          const res = await writeFileToDirectoryHandle(currentHandle, path, content);
-          if (res.success) {
-            return {
-              written: true,
-              output: `File '${path}' salvato direttamente nella cartella '${currentHandle.name}' sul tuo disco PC!`
-            };
-          }
-        }
-      } catch (e) {}
-    }
-
     // 3. Fallback: download into the browser's Downloads folder
-    downloadFileDirectly(path, content);
+    downloadFileDirectly(cleanRelPath, content);
     return {
       written: false,
-      output: `File '${path}' scaricato nella cartella Download del browser. (💡 Per salvarlo direttamente dentro '${cleanFolder}', assicurati che il backend locale sia attivo su localhost:8000 o seleziona la cartella dal pulsante "Sfoglia Cartella dal PC").`
+      output: `File '${cleanRelPath}' scaricato nella cartella Download del computer. (💡 Per salvarlo direttamente dentro '${cleanFolder}' senza scaricarlo, seleziona la cartella con "Sfoglia Cartella dal PC").`
     };
   };
 

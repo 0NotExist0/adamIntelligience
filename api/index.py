@@ -383,47 +383,50 @@ async def serverless_workspace_info():
         "default_folder": "/workspace",
         "user_home": "/home",
         "desktop_dir": "/home/Desktop",
-        "platform": "serverless"
+        "platform": "serverless",
+        "is_serverless": True,
+        "local_disk_available": False
     }
 
 @app.post("/api/workspace/browse-native")
 async def serverless_browse_native(req: WorkspaceBrowseNativeRequest):
-    return {"cancelled": True, "folder_path": None}
+    return {"cancelled": True, "folder_path": None, "is_serverless": True}
 
 @app.get("/api/workspace/browse-dirs")
 async def serverless_browse_dirs(target_path: Optional[str] = None):
     return {
-        "connected": True,
+        "connected": False,
+        "is_serverless": True,
         "current": target_path or "/workspace",
         "parent": None,
-        "drives": ["/"],
-        "quick_locations": [{"label": "Workspace", "path": "/workspace"}],
+        "drives": [],
+        "quick_locations": [],
         "subdirectories": []
     }
 
 @app.post("/api/workspace/set-folder")
 async def serverless_set_folder(req: WorkspaceSetFolderRequest):
-    return {"success": True, "folder_path": req.folder_path, "folder_name": req.folder_path.split("/")[-1] or req.folder_path}
+    return {"success": True, "is_serverless": True, "folder_path": req.folder_path, "folder_name": req.folder_path.split("/")[-1] or req.folder_path}
 
 @app.get("/api/workspace/tree")
 async def serverless_get_tree(folder_path: str = ""):
-    return {"folder_path": folder_path, "tree": []}
+    return {"folder_path": folder_path, "tree": [], "is_serverless": True}
 
 @app.get("/api/workspace/file-content")
 async def serverless_file_content(folder_path: str, relative_path: str):
-    return {"success": True, "path": relative_path, "content": "// File in ambiente serverless"}
+    return {"success": False, "is_serverless": True, "path": relative_path, "error": "In ambiente cloud/serverless usa il File System Access del browser."}
 
 @app.post("/api/workspace/save-file")
 async def serverless_save_file(req: WorkspaceSaveFileRequest):
-    return {"success": True, "path": req.relative_path, "message": "File salvato"}
+    return {"success": False, "is_serverless": True, "path": req.relative_path, "error": "Serverless non può scrivere sul disco locale del client."}
 
 @app.post("/api/workspace/delete-file")
 async def serverless_delete_file(req: WorkspaceDeleteFileRequest):
-    return {"success": True, "path": req.relative_path, "message": "File eliminato"}
+    return {"success": False, "is_serverless": True, "path": req.relative_path, "error": "Serverless non può eliminare file sul disco locale del client."}
 
 @app.post("/api/workspace/run-command")
 async def serverless_run_command(req: WorkspaceRunCommandRequest):
-    return {"success": True, "stdout": f"Comando '{req.command}' simulato in ambiente cloud", "stderr": "", "returncode": 0}
+    return {"success": False, "is_serverless": True, "stdout": "", "stderr": "I comandi shell locali richiedono il backend locale 'python backend/main.py'.", "returncode": 1}
 
 @app.post("/api/workspace/agent-task")
 async def serverless_agent_task(req: WorkspaceAgentTaskRequest):
