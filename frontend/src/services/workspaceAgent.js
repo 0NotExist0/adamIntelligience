@@ -281,6 +281,25 @@ export const deleteFileFromDirectoryHandle = async (rootDirHandle, relativePath)
 };
 
 /**
+ * Helper to download file directly to user's computer if disk handle isn't active
+ */
+export const downloadFileDirectly = (fileName, content) => {
+  try {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = (fileName || 'file.txt').replace(/\\/g, '/').split('/').pop() || 'file.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    console.error('Download file error:', err);
+  }
+};
+
+/**
  * Client-Side Browser Workspace AI Agent Task Runner (for Vercel & Web)
  */
 export const runBrowserWorkspaceAgentTask = async ({
@@ -289,9 +308,11 @@ export const runBrowserWorkspaceAgentTask = async ({
   taskPrompt,
   messages = [],
   model = 'openrouter/free',
-  maxIterations = 5
+  maxIterations = 5,
+  apiKey = null
 }) => {
-  const cleanFolder = folderPath || dirHandle?.name || 'Cartella Locale';
+  const currentHandle = dirHandle || activeDirectoryHandle;
+  const cleanFolder = folderPath || currentHandle?.name || 'Cartella Locale';
   const systemPrompt = `Sei un Agente AI di Ingegneria del Software Autonomo ("Workspace Coding Agent").
 Il tuo obiettivo è operare DIRETTAMENTE sui file della cartella di lavoro (${cleanFolder}) selezionata dall'utente sul suo computer.
 
@@ -313,6 +334,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
   }
 
   const stepsExecuted = [];
+  const generatedFiles = [];
   let iteration = 0;
   let finalAnswer = '';
   let lastResponse = '';
@@ -323,7 +345,8 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
       model,
       messages: conversation,
       temperature: 0.1,
-      max_tokens: 4096
+      max_tokens: 4096,
+      apiKey
     });
 
     if (!llmRes.success) {
@@ -356,24 +379,34 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
         const contentMatch = /content\s*=\s*(?:"""([\s\S]*?)"""|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(call.rawArgs);
         const path = pathMatch ? pathMatch[1] : 'nuovo_file.txt';
         const content = contentMatch ? (contentMatch[1] || contentMatch[2] || contentMatch[3] || '') : '';
-        if (dirHandle) {
-          const res = await writeFileToDirectoryHandle(dirHandle, path, content);
-          output = res.success ? `File '${path}' creato/salvato con successo sul disco!` : `Errore: ${res.error}`;
+        
+        generatedFiles.push({ path, content });
+
+        if (currentHandle) {
+          const res = await writeFileToDirectoryHandle(currentHandle, path, content);
+          if (res.success) {
+            output = `File '${path}' salvato direttamente sul tuo disco locale!`;
+          } else {
+            downloadFileDirectly(path, content);
+            output = `File '${path}' scaricato sul computer (${res.error})`;
+          }
         } else {
-          output = `File '${path}' generato con successo: ${content.length} caratteri.`;
+          // Auto-download to PC
+          downloadFileDirectly(path, content);
+          output = `File '${path}' salvato sul tuo computer! (Per scriverlo direttamente nella cartella Prova, selezionala con "Sfoglia Cartella dal PC").`;
         }
       } else if (call.name === 'read_file') {
         const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
         const path = pathMatch ? pathMatch[1] : '';
-        if (dirHandle && path) {
-          const res = await readFileFromDirectoryHandle(dirHandle, path);
+        if (currentHandle && path) {
+          const res = await readFileFromDirectoryHandle(currentHandle, path);
           output = res.success ? res.content : `Errore: ${res.error}`;
         } else {
-          output = `Lettura file '${path}' eseguita.`;
+          output = `Lettura file '${path}' simulata.`;
         }
       } else if (call.name === 'list_files') {
-        if (dirHandle) {
-          const tree = await buildTreeFromDirectoryHandle(dirHandle);
+        if (currentHandle) {
+          const tree = await buildTreeFromDirectoryHandle(currentHandle);
           output = `File trovati nella cartella: ${tree.map((t) => t.name).join(', ')}`;
         } else {
           output = 'Cartella vuota.';
@@ -381,8 +414,8 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
       } else if (call.name === 'delete_file') {
         const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
         const path = pathMatch ? pathMatch[1] : '';
-        if (dirHandle && path) {
-          const res = await deleteFileFromDirectoryHandle(dirHandle, path);
+        if (currentHandle && path) {
+          const res = await deleteFileFromDirectoryHandle(currentHandle, path);
           output = res.success ? `File '${path}' eliminato.` : `Errore: ${res.error}`;
         } else {
           output = `File '${path}' rimosso.`;
@@ -415,6 +448,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     folder: cleanFolder,
     steps: stepsExecuted,
     steps_count: stepsExecuted.length,
+    generatedFiles: generatedFiles,
     model,
     iterations: iteration
   };

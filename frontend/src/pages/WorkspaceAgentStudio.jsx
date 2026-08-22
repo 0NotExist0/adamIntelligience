@@ -60,7 +60,8 @@ import {
   buildTreeFromDirectoryHandle,
   readFileFromDirectoryHandle,
   writeFileToDirectoryHandle,
-  deleteFileFromDirectoryHandle
+  deleteFileFromDirectoryHandle,
+  downloadFileDirectly
 } from '../services/workspaceAgent';
 import { POPULAR_MODELS, getOpenRouterKey, setOpenRouterKey } from '../services/openrouter';
 import { useToast } from '../components/Toast';
@@ -181,6 +182,16 @@ export default function WorkspaceAgentStudio() {
       appendTerminal('error', `[ERRORE]: Impossibile accedere a ${path}: ${res.error}`);
     }
     setIsLoadingTree(false);
+  };
+
+  const handleConfirmPathClick = async () => {
+    const isWeb = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    if (isWeb && !getActiveDirectoryHandle()) {
+      addToast('Su Vercel, seleziona la cartella dal selettore per autorizzare la scrittura reale sul disco!', 'info');
+      await handleOpenNativeFolderDialog();
+    } else {
+      await handleLoadFolder();
+    }
   };
 
   const [isDirBrowserOpen, setIsDirBrowserOpen] = useState(false);
@@ -427,6 +438,7 @@ export default function WorkspaceAgentStudio() {
             steps: agentRes.steps || [],
             stepsCount: agentRes.steps_count || 0,
             iterations: agentRes.iterations || 1,
+            generatedFiles: agentRes.generatedFiles || [],
             model: agentRes.model,
             folder: folderPath
           }
@@ -613,10 +625,21 @@ export default function WorkspaceAgentStudio() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-extrabold text-white">Agente AI di Workspace</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>PC LOCALE ATTIVO</span>
-                </span>
+                {getActiveDirectoryHandle() ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>DISCO LOCALE PC CONNESSO ({getActiveDirectoryHandle().name})</span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleOpenNativeFolderDialog}
+                    className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 flex items-center gap-1 cursor-pointer transition-all animate-pulse"
+                    title="Clicca per autorizzare la scrittura reale sulla cartella del computer"
+                  >
+                    <AlertCircle className="w-3 h-3 text-amber-400" />
+                    <span>CLICCA PER AUTORIZZARE SCRITTURA PC</span>
+                  </button>
+                )}
               </div>
               <p className="text-xs text-slate-400">Seleziona qualsiasi cartella del computer: l'Agente AI leggerà, scriverà ed eseguirà comandi lì dentro</p>
             </div>
@@ -692,14 +715,14 @@ export default function WorkspaceAgentStudio() {
               type="text"
               value={folderPath}
               onChange={(e) => setFolderPath(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLoadFolder()}
+              onKeyDown={(e) => e.key === 'Enter' && handleConfirmPathClick()}
               placeholder="Percorso cartella locale (es. C:\Progetti\MioSito o C:\Users\...)..."
               className="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-2 text-xs font-mono text-purple-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 shadow-inner"
             />
           </div>
 
           <button
-            onClick={() => handleLoadFolder()}
+            onClick={() => handleConfirmPathClick()}
             disabled={isLoadingTree}
             className="px-4 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors shrink-0"
           >
@@ -980,7 +1003,36 @@ export default function WorkspaceAgentStudio() {
 
                     {/* Agent Trace Badge & Steps Inspector */}
                     {!isUser && msg.agentTrace?.steps?.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-purple-500/20 space-y-1.5">
+                      <div className="mt-3 pt-2.5 border-t border-purple-500/20 space-y-2">
+                        {/* Generated Files Download Cards */}
+                        {msg.agentTrace?.generatedFiles?.length > 0 && (
+                          <div className="space-y-1.5 mb-2">
+                            <span className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              <span>File creati sul tuo PC ({msg.agentTrace.generatedFiles.length}):</span>
+                            </span>
+                            {msg.agentTrace.generatedFiles.map((gf, gfIdx) => (
+                              <div
+                                key={gfIdx}
+                                className="p-2 px-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="flex items-center gap-1.5 text-emerald-200 truncate">
+                                  <FileCode className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="font-mono font-bold truncate">{gf.path}</span>
+                                </div>
+                                <button
+                                  onClick={() => downloadFileDirectly(gf.path, gf.content)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px] flex items-center gap-1 shadow shrink-0 transition-all active:scale-95"
+                                  title="Scarica file sul computer"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>Scarica File</span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <span className="text-[10px] font-bold text-purple-300 flex items-center gap-1">
                           <Zap className="w-3 h-3 text-amber-400" />
                           <span>Azioni eseguite nella cartella ({msg.agentTrace.steps.length}):</span>
