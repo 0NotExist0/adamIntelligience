@@ -393,3 +393,217 @@ export const sendOpenRouterChat = async ({
   }
 };
 
+/**
+ * Real-Time Streaming Chat with Live Token Output & Reasoning / Thought Stream
+ */
+export const streamOpenRouterChat = async ({
+  model = 'openrouter/free',
+  messages = [],
+  temperature = 0.7,
+  max_tokens = 8192,
+  apiKey = null,
+  enableMemory = true,
+  allowFallback = true,
+  onChunk = null, // ({ content, reasoning, rawContent, model, isError }) => void
+  onComplete = null
+}) => {
+  const activeKey = apiKey || getOpenRouterKey();
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'HTTP-Referer': window.location.origin || 'https://aistudio.vercel.app',
+    'X-Title': 'AI Studio Pro'
+  };
+
+  if (activeKey) {
+    headers['Authorization'] = `Bearer ${activeKey}`;
+  }
+
+  // Inject Long-Term Memory
+  let enrichedMessages = [...messages];
+  if (enableMemory) {
+    const memoryPrompt = buildMemoryContextPrompt();
+    if (memoryPrompt) {
+      const systemIdx = enrichedMessages.findIndex((m) => m.role === 'system');
+      if (systemIdx >= 0) {
+        enrichedMessages[systemIdx] = {
+          role: 'system',
+          content: `${enrichedMessages[systemIdx].content}${memoryPrompt}`
+        };
+      } else {
+        enrichedMessages.unshift({
+          role: 'system',
+          content: `Sei un assistente AI intelligente e utile.${memoryPrompt}`
+        });
+      }
+    }
+  }
+
+  if (!activeKey) {
+    const errorMsg = '⚠️ Chiave API OpenRouter mancante! Inserisci una chiave API gratuita nelle Impostazioni.';
+    if (onChunk) onChunk({ content: errorMsg, reasoning: '', isError: true });
+    return { success: false, error: errorMsg };
+  }
+
+  let currentModel = model || 'openrouter/free';
+  if (
+    currentModel.includes('llama-3.3-70b-instruct:free') || 
+    currentModel.includes('gemini-flash-1.5-8b:free') ||
+    currentModel.includes('gemini-2.0-flash-exp:free')
+  ) {
+    currentModel = 'openrouter/free';
+  }
+
+  const candidateModels = allowFallback 
+    ? [currentModel, ...RELIABLE_FREE_FALLBACKS.filter((f) => f !== currentModel)]
+    : [currentModel];
+
+  let accumulatedContent = '';
+  let accumulatedReasoning = '';
+  let successfulModel = currentModel;
+  let lastError = null;
+
+  for (const targetModel of candidateModels) {
+    accumulatedContent = '';
+    accumulatedReasoning = '';
+    try {
+      const payload = {
+        model: targetModel,
+        messages: enrichedMessages,
+        temperature,
+        stream: true
+      };
+      if (max_tokens && max_tokens > 0) {
+        payload.max_tokens = max_tokens;
+      }
+
+      const response = await fetch(`${OPENROUTER_API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        const errMsg = errJson.error?.message || `HTTP ${response.status}`;
+        throw new Error(errMsg);
+      }
+
+      successfulModel = targetModel;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) continue;
+          if (trimmed === 'data: [DONE]') continue;
+
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              const choice = data.choices?.[0];
+              if (choice) {
+                const delta = choice.delta || {};
+                
+                // 1. Native Reasoning Stream (DeepSeek R1, Nemotron, etc.)
+                if (delta.reasoning) {
+                  accumulatedReasoning += delta.reasoning;
+                }
+
+                // 2. Regular Content Stream
+                if (delta.content) {
+                  accumulatedContent += delta.content;
+                }
+
+                // 3. Handle inline <think> tags if model embeds thoughts in content
+                let displayContent = accumulatedContent;
+                let displayReasoning = accumulatedReasoning;
+
+                const thinkMatch = displayContent.match(/<think>([\s\S]*?)(?:<\/think>|$)/);
+                if (thinkMatch) {
+                  displayReasoning = (displayReasoning ? displayReasoning + '\n' : '') + thinkMatch[1].trim();
+                  displayContent = displayContent.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*$/g, '').trimStart();
+                }
+
+                const cleanDisplay = stripMemoryBlocks(displayContent);
+
+                if (onChunk) {
+                  onChunk({
+                    content: cleanDisplay,
+                    reasoning: displayReasoning,
+                    rawContent: accumulatedContent,
+                    model: successfulModel,
+                    isError: false
+                  });
+                }
+              }
+            } catch (e) {
+              // ignore partial chunk json parse
+            }
+          }
+        }
+      }
+
+      // Successful stream completed
+      lastError = null;
+      break;
+    } catch (reqErr) {
+      lastError = reqErr;
+      const errMsg = reqErr.message || '';
+      const isFallbackable = errMsg.toLowerCase().includes('no endpoints found') ||
+                            errMsg.toLowerCase().includes('unavailable for free') || 
+                            errMsg.toLowerCase().includes('use this slug instead') ||
+                            errMsg.toLowerCase().includes('not found') ||
+                            errMsg.toLowerCase().includes('rate limit') ||
+                            errMsg.toLowerCase().includes('temporarily unavailable');
+
+      if (!allowFallback || !isFallbackable) {
+        break;
+      }
+      console.warn(`[OpenRouter Stream Fallback] Modello "${targetModel}" non disponibile. Fallback...`);
+    }
+  }
+
+  if (lastError && !accumulatedContent) {
+    const errorMsg = `Errore OpenRouter: ${lastError.message}`;
+    if (onChunk) onChunk({ content: errorMsg, reasoning: '', isError: true });
+    return { success: false, error: errorMsg };
+  }
+
+  // Parse final reasoning / content
+  let finalContent = accumulatedContent;
+  let finalReasoning = accumulatedReasoning;
+  const thinkMatch = finalContent.match(/<think>([\s\S]*?)(?:<\/think>|$)/);
+  if (thinkMatch) {
+    finalReasoning = (finalReasoning ? finalReasoning + '\n' : '') + thinkMatch[1].trim();
+    finalContent = finalContent.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*$/g, '').trimStart();
+  }
+
+  const cleanFinal = stripMemoryBlocks(finalContent);
+
+  if (onComplete) {
+    onComplete({
+      content: cleanFinal,
+      reasoning: finalReasoning,
+      model: successfulModel
+    });
+  }
+
+  return {
+    success: true,
+    content: cleanFinal,
+    reasoning: finalReasoning,
+    rawContent: accumulatedContent,
+    model: successfulModel
+  };
+};
+

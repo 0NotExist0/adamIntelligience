@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Zap, 
   Send, 
@@ -16,33 +16,36 @@ import {
   Globe,
   Database,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Brain,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { CURATED_POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
-import { runAgentChatPipeline } from '../services/agentPipeline';
+import { CURATED_POPULAR_MODELS, sendOpenRouterChat, streamOpenRouterChat } from '../services/openrouter';
+import { runAgentChatPipeline, runAgentChatPipelineStream } from '../services/agentPipeline';
 import ModelPickerModal from '../components/ModelPickerModal';
 import AgentPipelineBadge from '../components/AgentPipelineBadge';
 import { useToast } from '../components/Toast';
 
 export default function InferencePlayground({ initialModel }) {
   const [selectedModel, setSelectedModel] = useState(() => {
-    const raw = initialModel || 'google/gemini-2.0-flash-exp:free';
-    return raw.includes('llama-3.3-70b-instruct:free') ? 'google/gemini-2.0-flash-exp:free' : raw;
+    const raw = initialModel || 'openrouter/free';
+    return (raw.includes('llama-3.3-70b-instruct:free') || raw.includes('gemini-flash-1.5-8b:free')) ? 'openrouter/free' : raw;
   });
   const [customModel, setCustomModel] = useState('');
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Ciao! Sono il tuo **Agente AI Avanzato** potenziato da **OpenRouter**, calibrazione dinamica dei parametri, **Fact-Checking Web in tempo reale** e **Memoria a Lungo Termine prioritaria**.\n\nFai qualsiasi domanda o chiedi codice: calcolerò in autonomia la temperatura ottimale e i token necessari, verificherò le fonti sul web e applicherò con priorità assoluta le tue informazioni salvate!',
+      content: 'Ciao! Sono il tuo **Agente AI Avanzato** potenziato da **OpenRouter**, calibrazione dinamica dei parametri, **Streaming Live delle Risposte e dei Pensieri**, **Fact-Checking Web in tempo reale** e **Memoria a Lungo Termine prioritaria**.\n\nFai qualsiasi domanda o chiedi codice: calcolerò in tempo reale i parametri ottimali, mostrerò il flusso dei pensieri in streaming e genererò risposte complete senza interruzioni!',
       agentTrace: {
         calibratedTemperature: 0.2,
-        calibratedMaxTokens: 1024,
+        calibratedMaxTokens: 8192,
         taskType: 'general_qa',
-        reasoningStrategy: 'Calibrazione automatica parametri & priorità al Memory Vault',
+        reasoningStrategy: 'Streaming in tempo reale & Priorità al Memory Vault',
         webSources: [],
         webSearchPerformed: false,
-        prioritizedMemoriesCount: 3,
+        prioritizedMemoriesCount: 2,
         confidenceScore: '100% (Verificato)'
       }
     }
@@ -55,6 +58,23 @@ export default function InferencePlayground({ initialModel }) {
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(8192);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [collapsedThoughts, setCollapsedThoughts] = useState({});
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, currentPipelineStep]);
+
+  const toggleThoughtCollapse = (index) => {
+    setCollapsedThoughts((prev) => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -62,8 +82,15 @@ export default function InferencePlayground({ initialModel }) {
 
     const userPromptText = inputPrompt.trim();
     const userMessage = { role: 'user', content: userPromptText };
+    const placeholderAssistant = { 
+      role: 'assistant', 
+      content: '', 
+      reasoning: '', 
+      isStreaming: true 
+    };
+
     const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages([...newMessages, placeholderAssistant]);
     setInputPrompt('');
     setLoading(true);
     setCurrentPipelineStep({ stage: 'init', label: '🚀 Avvio pipeline Agente Intelligente...', progress: 10 });
@@ -72,8 +99,8 @@ export default function InferencePlayground({ initialModel }) {
 
     try {
       if (isAgentMode) {
-        // --- AUTONOMOUS AGENT PIPELINE ---
-        const agentResult = await runAgentChatPipeline({
+        // --- AUTONOMOUS AGENT PIPELINE WITH REAL-TIME STREAMING ---
+        const agentResult = await runAgentChatPipelineStream({
           prompt: userPromptText,
           messages: newMessages.filter((m, idx) => !(idx === 0 && m.role === 'assistant')),
           model: activeModelId,
@@ -84,54 +111,95 @@ export default function InferencePlayground({ initialModel }) {
               setTemperature(step.meta.temperature);
               setMaxTokens(step.meta.max_tokens);
             }
+          },
+          onStreamChunk: ({ content, reasoning, agentTrace, isError }) => {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: isError ? `⚠️ ${content}` : content,
+                  reasoning: reasoning || updated[lastIdx].reasoning || '',
+                  agentTrace: agentTrace || updated[lastIdx].agentTrace,
+                  isStreaming: true
+                };
+              }
+              return updated;
+            });
           }
         });
 
-        if (agentResult.success) {
-          setMessages((prev) => [
-            ...prev,
-            { 
-              role: 'assistant', 
-              content: agentResult.content,
-              agentTrace: agentResult.agentTrace
-            }
-          ]);
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `⚠️ ${agentResult.error}` }
-          ]);
-        }
+        // Finalize state
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              content: agentResult.success ? agentResult.content : `⚠️ ${agentResult.error}`,
+              reasoning: agentResult.reasoning || updated[lastIdx].reasoning || '',
+              agentTrace: agentResult.agentTrace,
+              isStreaming: false
+            };
+          }
+          return updated;
+        });
       } else {
-        // --- MANUAL MODE ---
+        // --- MANUAL STREAMING MODE ---
         const apiMessages = newMessages
           .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
           .map((m) => ({ role: m.role, content: m.content }));
 
-        const res = await sendOpenRouterChat({
+        const streamRes = await streamOpenRouterChat({
           model: activeModelId,
           messages: apiMessages,
           max_tokens: maxTokens,
-          temperature: temperature
+          temperature: temperature,
+          onChunk: ({ content, reasoning, isError }) => {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: isError ? `⚠️ ${content}` : content,
+                  reasoning: reasoning || updated[lastIdx].reasoning || '',
+                  isStreaming: true
+                };
+              }
+              return updated;
+            });
+          }
         });
 
-        if (res.success) {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: res.content }
-          ]);
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `⚠️ ${res.error}` }
-          ]);
-        }
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              content: streamRes.success ? streamRes.content : `⚠️ ${streamRes.error}`,
+              reasoning: streamRes.reasoning || updated[lastIdx].reasoning || '',
+              isStreaming: false
+            };
+          }
+          return updated;
+        });
       }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `❌ Errore durante l'elaborazione: ${err.message}` }
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+          updated[lastIdx] = {
+            ...updated[lastIdx],
+            content: `❌ Errore durante lo streaming: ${err.message}`,
+            isStreaming: false
+          };
+        }
+        return updated;
+      });
     } finally {
       setLoading(false);
       setCurrentPipelineStep(null);
@@ -373,7 +441,53 @@ export default function InferencePlayground({ initialModel }) {
                         : 'bg-slate-900/90 text-slate-200 border border-slate-800 shadow-md'
                     }`}
                   >
-                    <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                    {/* Live Streaming Reasoning / Thoughts Accordion */}
+                    {!isUser && msg.reasoning && (
+                      <div className="mb-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 overflow-hidden shadow-inner animate-in fade-in duration-200">
+                        <button
+                          type="button"
+                          onClick={() => toggleThoughtCollapse(index)}
+                          className="w-full px-3 py-2 bg-purple-900/20 hover:bg-purple-900/40 flex items-center justify-between text-[11px] font-bold text-purple-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Brain className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                            <span>Processo di Pensiero & Ragionamento</span>
+                            {msg.isStreaming && !msg.content && (
+                              <span className="text-[9px] bg-purple-500/20 text-purple-200 px-2 py-0.5 rounded-full border border-purple-500/30 animate-pulse">
+                                Streaming Pensieri...
+                              </span>
+                            )}
+                          </div>
+                          {collapsedThoughts[index] ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-purple-400" />
+                          ) : (
+                            <ChevronUp className="w-3.5 h-3.5 text-purple-400" />
+                          )}
+                        </button>
+
+                        {!collapsedThoughts[index] && (
+                          <div className="p-3 font-mono text-[11px] text-purple-200/90 whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto border-t border-purple-500/20 bg-slate-950/40">
+                            {msg.reasoning}
+                            {msg.isStreaming && !msg.content && (
+                              <span className="inline-block w-1.5 h-3 bg-purple-400 ml-1 animate-pulse" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Main Content Stream */}
+                    <div className="whitespace-pre-wrap font-sans">
+                      {msg.content || (msg.isStreaming && !msg.reasoning ? (
+                        <span className="text-slate-400 italic flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                          Inizio elaborazione risposta...
+                        </span>
+                      ) : '')}
+                      {msg.isStreaming && msg.content && (
+                        <span className="inline-block w-2 h-3.5 bg-purple-400 ml-1 animate-pulse align-middle" />
+                      )}
+                    </div>
 
                     {/* Agent Trace Inspector */}
                     {!isUser && msg.agentTrace && (
@@ -404,7 +518,9 @@ export default function InferencePlayground({ initialModel }) {
               );
             })}
 
-            {loading && (
+            <div ref={messagesEndRef} />
+
+            {loading && !messages[messages.length - 1]?.content && !messages[messages.length - 1]?.reasoning && (
               <div className="flex gap-3 justify-start animate-in fade-in duration-200">
                 <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
                   <Bot className="w-4 h-4 animate-bounce" />

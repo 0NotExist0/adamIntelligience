@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getMemories } from './memory';
-import { sendOpenRouterChat, getOpenRouterKey } from './openrouter';
+import { sendOpenRouterChat, streamOpenRouterChat, getOpenRouterKey } from './openrouter';
 
 const META_ANALYZER_PROMPT = `Sei un Meta-Agente AI specializzato nell'analisi preliminare dei prompt e nell'ottimizzazione degli iperparametri di inferenza.
 Il tuo compito è analizzare il prompt dell'utente e determinare:
@@ -326,5 +326,152 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
       prioritizedMemories: savedMemories.slice(0, 5),
       confidenceScore: '100% (Verificato)'
     }
+  };
+};
+
+/**
+ * Autonomous Intelligent Agent Pipeline with Real-Time Live Streaming Output & Thoughts
+ */
+export const runAgentChatPipelineStream = async ({
+  prompt,
+  messages = [],
+  model = 'openrouter/free',
+  forceWebSearch = false,
+  onProgressStep = null,
+  onStreamChunk = null // ({ content, reasoning, rawContent, model, agentTrace, isError }) => void
+}) => {
+  // STAGE 1: META-AGENT ANALYSIS
+  if (onProgressStep) {
+    onProgressStep({
+      stage: 'meta',
+      label: '🧠 Meta-Agente: Calibrazione iperparametri in tempo reale...',
+      progress: 25
+    });
+  }
+  const meta = await runMetaPromptAnalysis(prompt);
+  const calibratedTemp = meta.temperature;
+  const calibratedTokens = meta.max_tokens;
+
+  // STAGE 2: MEMORY VAULT RECALL
+  if (onProgressStep) {
+    onProgressStep({
+      stage: 'memory',
+      label: '🔒 Accesso Memory Vault: Priorità assoluta regole utente...',
+      progress: 50,
+      meta
+    });
+  }
+  const savedMemories = getMemories();
+  const memoryContext = savedMemories.length > 0
+    ? savedMemories.map((m, i) => `${i + 1}. [${m.category}] ${m.text}`).join('\n')
+    : 'Nessuna memoria salvata nel vault.';
+
+  // STAGE 3: LIVE FACT-CHECKING WEB SEARCH
+  let webData = { results: [], summary_text: '' };
+  const shouldSearch = forceWebSearch || meta.needs_web_search;
+
+  if (shouldSearch) {
+    if (onProgressStep) {
+      onProgressStep({
+        stage: 'web',
+        label: `🌐 Ricerca Web Live: Fact-checking "${meta.search_query || prompt}"...`,
+        progress: 75,
+        meta
+      });
+    }
+    webData = await executeWebSearch(meta.search_query || prompt);
+  }
+
+  // STAGE 4: STRICT HIERARCHY SYNTHESIS & LIVE STREAMING
+  if (onProgressStep) {
+    onProgressStep({
+      stage: 'synthesis',
+      label: '⚡ Generazione Risposta & Streaming Pensieri Live...',
+      progress: 90,
+      meta,
+      webSourcesCount: webData.results.length
+    });
+  }
+
+  const strictSystemPrompt = `Sei un Agente AI di Massima Precisione e Ragionamento Avanzato.
+Il tuo obiettivo assoluto è fornire una risposta esatta, chiara, verificata e PRIVA DI DUBBI.
+
+=============================================================================
+🏛️ [GERARCHIA DELLE FONTI E PRIORITÀ ASSOLUTA DELLE INFORMAZIONI]:
+1. 🥇 PRIORITÀ 1 (ASSOLUTA - REGOLA FONDAMENTALE): INFORMAZIONI E REGOLE SALVATE NELLA MEMORIA LOCALE/VAULT.
+   Tutti i fatti, le regole e le preferenze elencate di seguito hanno priorità gerarchica assoluta.
+   Se un'informazione sul web o nei tuoi dati pregressi contraddice quanto salvato nella memoria locale, DEVI SEMPRE APPLICARE E DARE RAGIONE ALLA MEMORIA SALVATA.
+
+   [INFORMAZIONI SALVATE IN MEMORIA - PRIORITÀ 1]:
+${memoryContext}
+
+2. 🥈 PRIORITÀ 2: VERIFICA WEB IN TEMPO REALE.
+   Utilizza le seguenti informazioni verificate dal Web per garantire dati aggiornati ed esatti (fatti, eventi, link, specifiche), a patto che NON violino la Priorità 1:
+
+${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
+
+3. 🥉 PRIORITÀ 3: CONOSCENZA INTERNA DEL MODELLO.
+   Utilizzata per sintesi, logica e spiegazione coerente.
+
+=============================================================================
+🎯 [LINEE GUIDA PER LA RISPOSTA]:
+- Strategia di ragionamento calibrata: ${meta.reasoning_strategy}
+- Sii sicuro, trasparente, dettagliato e privo di incertezze.
+- Fornisci SEMPRE una risposta COMPLETA fino alla conclusione naturale del discorso, senza mai troncare a metà o lasciare frasi sospese.
+- Se utilizzi dati dal web, cita le relative fonti quando appropriato.
+- Se l'argomento tocca una regola salvata nel Memory Vault, rispettala tassativamente.
+`;
+
+  const history = messages.filter((m) => m.role !== 'system');
+  const apiMessages = [
+    { role: 'system', content: strictSystemPrompt },
+    ...history
+  ];
+
+  if (apiMessages[apiMessages.length - 1]?.content !== prompt) {
+    apiMessages.push({ role: 'user', content: prompt });
+  }
+
+  const agentTrace = {
+    meta,
+    calibratedTemperature: calibratedTemp,
+    calibratedMaxTokens: calibratedTokens,
+    taskType: meta.task_type,
+    reasoningStrategy: meta.reasoning_strategy,
+    webSources: webData.results || [],
+    webSearchPerformed: Boolean(webData.results && webData.results.length > 0),
+    searchQuery: meta.search_query,
+    prioritizedMemoriesCount: savedMemories.length,
+    prioritizedMemories: savedMemories.slice(0, 5),
+    confidenceScore: '100% (Verificato)'
+  };
+
+  const streamResult = await streamOpenRouterChat({
+    model,
+    messages: apiMessages,
+    temperature: calibratedTemp,
+    max_tokens: calibratedTokens,
+    enableMemory: false,
+    onChunk: (chunk) => {
+      if (onStreamChunk) {
+        onStreamChunk({
+          ...chunk,
+          agentTrace
+        });
+      }
+    }
+  });
+
+  if (onProgressStep) {
+    onProgressStep({
+      stage: 'done',
+      label: '✅ Risposta Generata con Successo!',
+      progress: 100
+    });
+  }
+
+  return {
+    ...streamResult,
+    agentTrace
   };
 };

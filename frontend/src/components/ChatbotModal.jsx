@@ -11,10 +11,13 @@ import {
   Cpu, 
   HardDrive,
   Download,
-  Globe
+  Globe,
+  Brain,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
-import { runAgentChatPipeline } from '../services/agentPipeline';
+import { CURATED_POPULAR_MODELS, sendOpenRouterChat } from '../services/openrouter';
+import { runAgentChatPipelineStream } from '../services/agentPipeline';
 import ModelPickerModal from './ModelPickerModal';
 import AgentPipelineBadge from './AgentPipelineBadge';
 import { downloadJSONFile } from '../services/storage';
@@ -26,16 +29,17 @@ export default function ChatbotModal({ bot, onClose }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: `Ciao! Sono **${bot.name}** (${bot.avatar || '🤖'}), potenziato da **OpenRouter** con auto-calibrazione parametri e fact-checking web.\n\nCome posso aiutarti oggi?`
+      content: `Ciao! Sono **${bot.name}** (${bot.avatar || '🤖'}), potenziato da **OpenRouter** con streaming live delle risposte e dei pensieri, calibrazione automatica e fact-checking web.\n\nCome posso aiutarti oggi?`
     }
   ]);
   const [inputPrompt, setInputPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const rawModel = bot.model || bot.baseModel || 'google/gemini-2.0-flash-exp:free';
-  const initialBotModel = rawModel === 'meta-llama/llama-3.3-70b-instruct:free' ? 'google/gemini-2.0-flash-exp:free' : rawModel;
+  const rawModel = bot.model || bot.baseModel || 'openrouter/free';
+  const initialBotModel = (rawModel.includes('llama-3.3-70b-instruct:free') || rawModel.includes('gemini-flash-1.5-8b:free')) ? 'openrouter/free' : rawModel;
   const [selectedModel, setSelectedModel] = useState(initialBotModel);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [agentStep, setAgentStep] = useState('');
+  const [collapsedThoughts, setCollapsedThoughts] = useState({});
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -44,52 +48,90 @@ export default function ChatbotModal({ bot, onClose }) {
 
   if (!bot) return null;
 
+  const toggleThoughtCollapse = (index) => {
+    setCollapsedThoughts((prev) => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     if (!inputPrompt.trim() || loading) return;
 
-    const userMessage = { role: 'user', content: inputPrompt.trim() };
+    const userPromptText = inputPrompt.trim();
+    const userMessage = { role: 'user', content: userPromptText };
+    const placeholderAssistant = { 
+      role: 'assistant', 
+      content: '', 
+      reasoning: '', 
+      isStreaming: true 
+    };
+
     const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages([...newMessages, placeholderAssistant]);
     setInputPrompt('');
     setLoading(true);
-    setAgentStep('Analisi prompt...');
+    setAgentStep('Analisi del prompt e recupero memoria...');
 
     try {
       const history = newMessages
         .filter((m, idx) => !(idx === 0 && m.role === 'assistant'))
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await runAgentChatPipeline({
-        prompt: inputPrompt.trim(),
+      const res = await runAgentChatPipelineStream({
+        prompt: userPromptText,
         messages: [
           { role: 'system', content: bot.systemPrompt || 'Sei un assistente AI amichevole, intelligente e utile.' },
           ...history
         ],
         model: selectedModel,
-        onProgressStep: (s) => setAgentStep(s.label)
+        onProgressStep: (s) => setAgentStep(s.label),
+        onStreamChunk: ({ content, reasoning, agentTrace, isError }) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: isError ? `⚠️ ${content}` : content,
+                reasoning: reasoning || updated[lastIdx].reasoning || '',
+                agentTrace: agentTrace || updated[lastIdx].agentTrace,
+                isStreaming: true
+              };
+            }
+            return updated;
+          });
+        }
       });
 
-      if (res.success) {
-        setMessages((prev) => [
-          ...prev,
-          { 
-            role: 'assistant', 
-            content: res.content,
-            agentTrace: res.agentTrace
-          }
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `⚠️ ${res.error}` }
-        ]);
-      }
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+          updated[lastIdx] = {
+            ...updated[lastIdx],
+            content: res.success ? res.content : `⚠️ ${res.error}`,
+            reasoning: res.reasoning || updated[lastIdx].reasoning || '',
+            agentTrace: res.agentTrace,
+            isStreaming: false
+          };
+        }
+        return updated;
+      });
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `❌ Errore durante la risposta: ${err.message}` }
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+          updated[lastIdx] = {
+            ...updated[lastIdx],
+            content: `❌ Errore durante la risposta: ${err.message}`,
+            isStreaming: false
+          };
+        }
+        return updated;
+      });
     } finally {
       setLoading(false);
       setAgentStep('');
@@ -217,7 +259,53 @@ export default function ChatbotModal({ bot, onClose }) {
                       : 'bg-slate-900/90 text-slate-200 border border-slate-800 shadow-md'
                   }`}
                 >
-                  <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                  {/* Live Streaming Reasoning / Thoughts Accordion */}
+                  {!isUser && msg.reasoning && (
+                    <div className="mb-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 overflow-hidden shadow-inner animate-in fade-in duration-200">
+                      <button
+                        type="button"
+                        onClick={() => toggleThoughtCollapse(index)}
+                        className="w-full px-3 py-2 bg-purple-900/20 hover:bg-purple-900/40 flex items-center justify-between text-[11px] font-bold text-purple-300 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Brain className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                          <span>Processo di Pensiero & Logica</span>
+                          {msg.isStreaming && !msg.content && (
+                            <span className="text-[9px] bg-purple-500/20 text-purple-200 px-2 py-0.5 rounded-full border border-purple-500/30 animate-pulse">
+                              Streaming Pensieri...
+                            </span>
+                          )}
+                        </div>
+                        {collapsedThoughts[index] ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-purple-400" />
+                        ) : (
+                          <ChevronUp className="w-3.5 h-3.5 text-purple-400" />
+                        )}
+                      </button>
+
+                      {!collapsedThoughts[index] && (
+                        <div className="p-3 font-mono text-[11px] text-purple-200/90 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto border-t border-purple-500/20 bg-slate-950/40">
+                          {msg.reasoning}
+                          {msg.isStreaming && !msg.content && (
+                            <span className="inline-block w-1.5 h-3 bg-purple-400 ml-1 animate-pulse" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Content Stream */}
+                  <div className="whitespace-pre-wrap font-sans">
+                    {msg.content || (msg.isStreaming && !msg.reasoning ? (
+                      <span className="text-slate-400 italic flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                        Inizio elaborazione risposta...
+                      </span>
+                    ) : '')}
+                    {msg.isStreaming && msg.content && (
+                      <span className="inline-block w-2 h-3.5 bg-purple-400 ml-1 animate-pulse align-middle" />
+                    )}
+                  </div>
 
                   {/* Agent Trace Badge */}
                   {!isUser && msg.agentTrace && (
@@ -242,7 +330,7 @@ export default function ChatbotModal({ bot, onClose }) {
             );
           })}
 
-          {loading && (
+          {loading && !messages[messages.length - 1]?.content && !messages[messages.length - 1]?.reasoning && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
                 <Bot className="w-4 h-4 animate-bounce" />
