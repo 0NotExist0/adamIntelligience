@@ -564,17 +564,23 @@ export const streamOpenRouterChat = async ({
                             errMsg.toLowerCase().includes('use this slug instead') ||
                             errMsg.toLowerCase().includes('not found') ||
                             errMsg.toLowerCase().includes('rate limit') ||
+                            errMsg.toLowerCase().includes('free-models-per-day') ||
                             errMsg.toLowerCase().includes('temporarily unavailable');
 
       if (!allowFallback || !isFallbackable) {
         break;
       }
-      console.warn(`[OpenRouter Stream Fallback] Modello "${targetModel}" non disponibile. Fallback...`);
+      console.warn(`[OpenRouter Stream Fallback] Modello "${targetModel}" non disponibile (${errMsg}). Fallback...`);
     }
   }
 
   if (lastError && !accumulatedContent) {
-    const errorMsg = `Errore OpenRouter: ${lastError.message}`;
+    let errorMsg = lastError.message || 'Errore di connessione a OpenRouter';
+    if (errorMsg.toLowerCase().includes('rate limit') || errorMsg.toLowerCase().includes('free-models-per-day')) {
+      errorMsg = '⚠️ **Limite giornaliero raggiunto per i modelli gratuiti su questa chiave OpenRouter!**\n\nOpenRouter applica un limite di richieste giornaliere per singola chiave gratuita. Per continuare subito puoi:\n\n1. 🔑 **Generare una nuova chiave API gratuita in 10 secondi** su [openrouter.ai/keys](https://openrouter.ai/keys) e incollarla cliccando su **"Chiave AI"** in alto.\n2. 🤖 **Cambiare modello** selezionando **"OpenRouter Free Auto-Router"** o **"Google Gemma"** dal menu a tendina.';
+    } else {
+      errorMsg = `Errore OpenRouter: ${errorMsg}`;
+    }
     if (onChunk) onChunk({ content: errorMsg, reasoning: '', isError: true });
     return { success: false, error: errorMsg };
   }
