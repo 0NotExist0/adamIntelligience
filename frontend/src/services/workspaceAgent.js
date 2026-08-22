@@ -1264,19 +1264,30 @@ export const runWorkspaceAgentTask = async ({
  * Web File System Access API picker for picking local folder directly from browser
  */
 export const pickDirectoryNative = async () => {
-  if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+  if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function') {
     try {
-      const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      setActiveDirectoryHandle(dirHandle);
-      return {
-        success: true,
-        handle: dirHandle,
-        name: dirHandle.name
-      };
+      let dirHandle;
+      try {
+        dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      } catch (e1) {
+        if (e1.name === 'AbortError') {
+          return { success: false, cancelled: true };
+        }
+        dirHandle = await window.showDirectoryPicker();
+      }
+      if (dirHandle) {
+        setActiveDirectoryHandle(dirHandle);
+        return {
+          success: true,
+          handle: dirHandle,
+          name: dirHandle.name
+        };
+      }
     } catch (err) {
       if (err.name === 'AbortError') {
         return { success: false, cancelled: true };
       }
+      console.warn('showDirectoryPicker error:', err);
       return { success: false, error: err.message };
     }
   }

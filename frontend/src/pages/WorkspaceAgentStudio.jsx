@@ -283,14 +283,70 @@ export default function WorkspaceAgentStudio() {
     }
   };
 
+  const folderInputRef = useRef(null);
+
+  const handleFolderInputChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const firstRel = files[0].webkitRelativePath || '';
+    const rootName = firstRel.split('/')[0] || 'Cartella Locale';
+    setFolderPath(rootName);
+
+    const tree = [];
+    const dirMap = {};
+
+    files.forEach((file) => {
+      const relPath = file.webkitRelativePath.replace(/^[^\/]+\//, '');
+      if (!relPath) return;
+
+      const parts = relPath.split('/');
+      const fileName = parts.pop();
+      let currentLevel = tree;
+
+      let currentPath = '';
+      parts.forEach((part) => {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (!dirMap[currentPath]) {
+          const newDir = {
+            name: part,
+            path: currentPath,
+            is_dir: true,
+            children: []
+          };
+          dirMap[currentPath] = newDir;
+          currentLevel.push(newDir);
+        }
+        currentLevel = dirMap[currentPath].children;
+      });
+
+      currentLevel.push({
+        name: fileName,
+        path: relPath,
+        is_dir: false,
+        size: file.size,
+        extension: fileName.includes('.') ? fileName.split('.').pop() : '',
+        fileObject: file
+      });
+    });
+
+    setFileTree(tree);
+    setIsHandleConnected(true);
+    setNeedsPermissionGrant(false);
+    setExpandedFolders({ [rootName]: true });
+    addToast(`Cartella "${rootName}" caricata con successo (${files.length} file)!`, 'success');
+    appendTerminal('success', `[WORKSPACE]: Connesso a cartella "${rootName}" (${files.length} file letti)`);
+  };
+
   const [isDirBrowserOpen, setIsDirBrowserOpen] = useState(false);
   const [browserDirsData, setBrowserDirsData] = useState(null);
   const [isBrowsingDirs, setIsBrowsingDirs] = useState(false);
 
   const handleOpenNativeFolderDialog = async () => {
     setIsLoadingTree(true);
-    // On Web / Vercel: use browser File System Access API for direct local PC disk read/write
-    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+
+    // 1. Try showDirectoryPicker (Chrome / Edge with real direct disk write)
+    if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function') {
       try {
         const res = await pickDirectoryNative();
         if (res.success && res.handle) {
@@ -310,11 +366,18 @@ export default function WorkspaceAgentStudio() {
           return;
         }
       } catch (err) {
-        console.warn('Browser directory picker error:', err);
+        console.warn('showDirectoryPicker error, falling back to input:', err);
       }
     }
 
-    // Otherwise fallback to backend dialog or directory browser
+    // 2. HTML5 Webkit Directory input (Guaranteed to open Windows Explorer in 100% of browsers)
+    if (folderInputRef.current) {
+      folderInputRef.current.click();
+      setIsLoadingTree(false);
+      return;
+    }
+
+    // 3. Fallback: OS native backend or Dir Browser Modal
     try {
       const res = await browseNativeOSFolder(folderPath);
       if (!res.cancelled && res.success && res.folder_path) {
@@ -788,6 +851,17 @@ export default function WorkspaceAgentStudio() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto h-[calc(100vh-5rem)] flex flex-col space-y-4 animate-in fade-in duration-300">
+      {/* Hidden universal HTML5 folder picker input for Windows Explorer guarantee */}
+      <input
+        type="file"
+        ref={folderInputRef}
+        webkitdirectory="true"
+        directory="true"
+        multiple
+        onChange={handleFolderInputChange}
+        style={{ display: 'none' }}
+      />
+
       {/* Top Workspace Bar */}
       <div className="glass-panel p-4 rounded-3xl border border-purple-500/30 flex flex-col gap-3 bg-slate-950/90 shadow-2xl">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
