@@ -322,6 +322,11 @@ TOOL A DISPOSIZIONE:
 3. [write_file(path="nome_file.ext", content="...")] -> Crea o sovrascrive un file direttamente sul disco del PC dell'utente
 4. [edit_file(path="nome_file.ext", target="vecchio", replacement="nuovo")] -> Modifica una parte del file
 5. [delete_file(path="nome_file.ext")] -> Elimina un file
+6. [ask_user(question="...")] -> Se non sai come andare avanti, la richiesta è ambigua, mancano requisiti o decisioni tecniche, FERMATI ed usa questo tool per fare domande all'utente.
+
+🛑 REGOLA FONDAMENTALE DI AUTONOMIA E CHIARIMENTO:
+Se non sai come andare avanti, mancano file necessari o la richiesta è aperta/ambigua, NON INVENTARE E NON PROCEDERE ALLA CIECA.
+FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...")] oppure poni chiaramente all'utente le tue domande e le opzioni consigliate per sbloccare il task.
 
 Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|>[tool_name(...)]<|tool_call_end|>. Formula spiegazioni chiare in italiano.`;
 
@@ -359,7 +364,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     }
 
     lastResponse = llmRes.content || '';
-    const toolRegex = /(?:<\|tool_call_start\|>)?\s*\[(list_files|read_file|write_file|edit_file|delete_file)\s*\(([\s\S]*?)\)\]\s*(?:<\|tool_call_end\|>)?/g;
+    const toolRegex = /(?:<\|tool_call_start\|>)?\s*\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\(([\s\S]*?)\)\]\s*(?:<\|tool_call_end\|>)?/g;
     const toolCalls = [];
     let match;
     while ((match = toolRegex.exec(lastResponse)) !== null) {
@@ -372,9 +377,17 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     }
 
     const toolObservations = [];
+    let stopRequested = false;
+
     for (const call of toolCalls) {
       let output = '';
-      if (call.name === 'write_file') {
+      if (call.name === 'ask_user') {
+        const qMatch = /question\s*=\s*(?:"""([\s\S]*?)"""|'([\s\S]*?)'|"([\s\S]*?)")/i.exec(call.rawArgs);
+        const question = qMatch ? (qMatch[1] || qMatch[2] || qMatch[3] || '') : call.rawArgs;
+        output = `Domanda rivolta all'utente: ${question}`;
+        stopRequested = true;
+        finalAnswer = lastResponse;
+      } else if (call.name === 'write_file') {
         const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
         const contentMatch = /content\s*=\s*(?:"""([\s\S]*?)"""|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(call.rawArgs);
         const path = pathMatch ? pathMatch[1] : 'nuovo_file.txt';
@@ -391,7 +404,6 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
             output = `File '${path}' scaricato sul computer (${res.error})`;
           }
         } else {
-          // Auto-download to PC
           downloadFileDirectly(path, content);
           output = `File '${path}' salvato sul tuo computer! (Per scriverlo direttamente nella cartella Prova, selezionala con "Sfoglia Cartella dal PC").`;
         }
@@ -431,6 +443,10 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
       toolObservations.push(`[RISULTATO TOOL ${call.name}]:\n${output}`);
     }
 
+    if (stopRequested) {
+      break;
+    }
+
     conversation.push({ role: 'assistant', content: lastResponse });
     conversation.push({
       role: 'user',
@@ -440,7 +456,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
 
   let cleaned = finalAnswer || lastResponse;
   cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, '').trim();
-  cleaned = cleaned.replace(/\[(list_files|read_file|write_file|edit_file|delete_file)\s*\([\s\S]*?\)\]/g, '').trim();
+  cleaned = cleaned.replace(/\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\([\s\S]*?\)\]/g, '').trim();
 
   return {
     success: true,

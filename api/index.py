@@ -428,6 +428,11 @@ TOOL A DISPOSIZIONE:
 3. [write_file(path="nome_file.ext", content="...")] -> Crea o sovrascrive un file direttamente sul disco del PC dell'utente
 4. [edit_file(path="nome_file.ext", target="vecchio", replacement="nuovo")] -> Modifica una parte del file
 5. [delete_file(path="nome_file.ext")] -> Elimina un file
+6. [ask_user(question="...")] -> Se non sai come andare avanti, mancano requisiti, la richiesta è ambigua o ci sono decisioni architetturali/tecniche da prendere, FERMATI ed usa questo tool per porre domande chiare all'utente.
+
+🛑 REGOLA FONDAMENTALE DI AUTONOMIA E CHIARIMENTO:
+Se mancano informazioni, requisiti o file necessari per proseguire, NON FARE SUPPOSIZIONI AZZARDATE E NON INVENTARE.
+FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...")] o formula chiaramente le domande e le opzioni consigliate per l'utente.
 
 Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|>[tool_name(...)]<|tool_call_end|>. Formula spiegazioni chiare in italiano."""
 
@@ -446,18 +451,18 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     )
     
     content = llm_res.get("content", "")
-    tool_matches = re.findall(r"\[(write_file|read_file|edit_file|delete_file|list_files)\s*\(([\s\S]*?)\)\]", content)
+    tool_matches = re.findall(r"\[(write_file|read_file|edit_file|delete_file|list_files|ask_user)\s*\(([\s\S]*?)\)\]", content)
     steps = []
     for idx, (tname, targs) in enumerate(tool_matches, start=1):
         steps.append({
             "iteration": idx,
             "tool": tname,
             "args": targs,
-            "result": {"output": f"Tool {tname} pianificato"}
+            "result": {"output": f"Tool {tname} completato"}
         })
 
     cleaned = re.sub(r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>", "", content).strip()
-    cleaned = re.sub(r"\[(list_files|read_file|write_file|edit_file|delete_file)\s*\([\s\S]*?\)\]", "", cleaned).strip()
+    cleaned = re.sub(r"\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\([\s\S]*?\)\]", "", cleaned).strip()
 
     return {
         "success": llm_res.get("success", False),

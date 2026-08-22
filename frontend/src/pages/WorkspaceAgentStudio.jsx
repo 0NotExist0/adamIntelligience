@@ -35,7 +35,8 @@ import {
   X,
   HardDrive,
   FolderUp,
-  Key
+  Key,
+  HelpCircle
 } from 'lucide-react';
 import { 
   getWorkspaceInfo, 
@@ -998,6 +999,14 @@ export default function WorkspaceAgentStudio() {
                         : 'bg-slate-900/90 text-slate-200 border border-slate-800/80 shadow'
                     }`}
                   >
+                    {/* Clarification / Question Alert Box */}
+                    {!isUser && msg.agentTrace?.steps?.some((st) => st.tool === 'ask_user') && (
+                      <div className="mb-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 font-medium">
+                        <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />
+                        <span>L'Agente ha interrotto il task per porti domande di chiarimento. Rispondi nel box sottostante per farlo proseguire.</span>
+                      </div>
+                    )}
+
                     {/* Main text content */}
                     <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
 

@@ -39,6 +39,18 @@ Puoi invocare uno o più tool rispondendo ESCLUSIVAMENTE con uno o più blocchi 
 7. Eliminare un file:
 <|tool_call_start|>[delete_file(path="percorso/del/file.ext")]<|tool_call_end|>
 
+8. Fermarsi e porre domande di chiarimento all'utente:
+<|tool_call_start|>[ask_user(question="...domande specifiche o opzioni per sbloccare il task...")]<|tool_call_end|>
+
+=============================================================================
+🛑 [REGOLA FONDAMENTALE DI AUTONOMIA E CHIARIMENTO]:
+- SE non sai come andare avanti,
+- SE la richiesta dell'utente è ambigua o mancano requisiti essenziali,
+- SE mancano file di configurazione o ci sono decisioni architetturali/tecniche da prendere,
+- SE incontri un errore bloccante:
+NON INVENTARE, NON FARE SUPPOSIZIONI AZZARDATE E NON CONTINUARE A CASO.
+FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...")] oppure poni direttamente domande chiare ed esaustive all'utente elencando le opzioni consigliate per decidere come proseguire.
+
 =============================================================================
 🎯 [LINEE GUIDA PER IL RAGIONAMENTO]:
 - Prima di modificare un file o creare nuovo codice, leggi i file pertinenti con [read_file(...)] o elenca la struttura con [list_files(...)].
@@ -303,7 +315,7 @@ class WorkspaceAgentRunner:
         
         # Pattern 2: [tool_name(path="...")]
         if not calls:
-            pattern2 = r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file)\s*\(([\s\S]*?)\)\]"
+            pattern2 = r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*\(([\s\S]*?)\)\]"
             for match in re.finditer(pattern2, text):
                 name = match.group(1).lower().strip()
                 raw_args = match.group(2).strip()
@@ -314,7 +326,17 @@ class WorkspaceAgentRunner:
     def execute_tool(self, folder_path: str, tool_name: str, raw_args: str) -> Dict[str, Any]:
         """Executes a single tool and returns output."""
         try:
-            if tool_name == "list_files":
+            if tool_name == "ask_user":
+                m = re.search(r'question\s*=\s*(?:"""([\s\S]*?)"""|\'\'\'([\s\S]*?)\'\'\'|"([\s\S]*?)"|\'([\s\S]*?)\')', raw_args)
+                question = m.group(1) or m.group(2) or m.group(3) or m.group(4) if m else raw_args.strip("\"'")
+                return {
+                    "tool": "ask_user",
+                    "question": question,
+                    "output": f"Domanda rivolta all'utente: {question}",
+                    "stop_loop": True
+                }
+
+            elif tool_name == "list_files":
                 m = re.search(r'subpath\s*=\s*["\']([^"\']*)["\']', raw_args)
                 subpath = m.group(1) if m else ""
                 files = list_flat_files(folder_path, subpath)
@@ -476,6 +498,7 @@ class WorkspaceAgentRunner:
                 break
             
             tool_observations = []
+            stop_requested = False
             for call in tool_calls:
                 tool_res = self.execute_tool(clean_folder, call["name"], call["raw_args"])
                 steps_executed.append({
@@ -485,7 +508,13 @@ class WorkspaceAgentRunner:
                     "result": tool_res
                 })
                 tool_observations.append(f"[RISULTATO TOOL {call['name']}]:\n{tool_res['output']}")
+                if tool_res.get("stop_loop") or call["name"] == "ask_user":
+                    stop_requested = True
+                    final_answer = response_content
             
+            if stop_requested:
+                break
+
             conversation.append({"role": "assistant", "content": response_content})
             conversation.append({
                 "role": "user",
@@ -494,7 +523,7 @@ class WorkspaceAgentRunner:
 
         cleaned_text = final_answer or response_content
         cleaned_text = re.sub(r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>", "", cleaned_text).strip()
-        cleaned_text = re.sub(r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file)\s*\([\s\S]*?\)\]", "", cleaned_text).strip()
+        cleaned_text = re.sub(r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*\([\s\S]*?\)\]", "", cleaned_text).strip()
 
         return {
             "success": True,
