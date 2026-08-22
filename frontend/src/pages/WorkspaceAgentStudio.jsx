@@ -1596,8 +1596,29 @@ export default function WorkspaceAgentStudio() {
                   </div>
                 ))
               ) : (
-                <div className="p-8 text-center text-slate-500 text-xs">
-                  Nessuna sottocartella trovata in questo percorso.
+                <div className="p-6 text-center space-y-3">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-600/20 text-purple-300 flex items-center justify-center mx-auto">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-white">Navigazione File su Vercel / Web</h4>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                      I browser web proteggono il tuo PC impedendo ai siti online di scansionare automaticamente il disco senza consenso. Per aprire o cambiare cartella, clicca sul pulsante qui sotto:
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsDirBrowserOpen(false);
+                      handleOpenNativeFolderDialog();
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95 text-white text-xs font-bold shadow-lg shadow-purple-500/30 transition-all inline-flex items-center gap-2"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span>Scegli Cartella dal Computer</span>
+                  </button>
+                  <p className="text-[10px] text-slate-500 pt-1">
+                    💡 <strong>Suggerimento:</strong> Selezionando ad esempio la cartella <code className="text-purple-300">Desktop</code> o <code className="text-purple-300">OneDrive\Desktop</code>, l'Agente AI potrà accedere a tutti i progetti e sottocartelle al suo interno!
+                  </p>
                 </div>
               )}
             </div>
