@@ -60,18 +60,44 @@ FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...")] oppure poni direttament
 """
 
 def sanitize_path(base_folder: str, relative_path: str) -> str:
-    """Safely resolves path within base folder or allows normalized absolute path."""
-    clean_base = os.path.abspath(base_folder)
+    """Safely resolves path within base folder, handling OneDrive, Windows drive letters and redundant prefixes."""
+    clean_base = os.path.abspath(base_folder.strip().strip('"').strip("'"))
     if not relative_path:
         return clean_base
     
-    if os.path.isabs(relative_path):
-        clean_target = os.path.abspath(relative_path)
-        if clean_target.startswith(clean_base):
-            return clean_target
-        return clean_target
+    rel_clean = relative_path.strip().strip('"').strip("'")
     
-    clean_target = os.path.abspath(os.path.join(clean_base, relative_path))
+    # 1. If relative_path is an absolute path (e.g. C:\Users\pietr\OneDrive\Desktop\Prova\ciao.txt)
+    if os.path.isabs(rel_clean):
+        clean_target = os.path.abspath(rel_clean)
+        # If it's already inside base_folder
+        if clean_target.lower().startswith(clean_base.lower() + os.sep) or clean_target.lower() == clean_base.lower():
+            return clean_target
+        # If base folder name is part of the absolute path segments
+        base_name = os.path.basename(clean_base)
+        parts = os.path.normpath(clean_target).split(os.sep)
+        lower_parts = [p.lower() for p in parts]
+        if base_name and base_name.lower() in lower_parts:
+            # find last occurrence of base_name
+            idx = len(lower_parts) - 1 - lower_parts[::-1].index(base_name.lower())
+            if idx < len(parts) - 1:
+                sub_rel = os.path.join(*parts[idx + 1:])
+                return os.path.abspath(os.path.join(clean_base, sub_rel))
+        return clean_target
+
+    # 2. If relative_path starts with base folder name (e.g. Prova/ciao.txt or OneDrive/Desktop/Prova/ciao.txt)
+    base_name = os.path.basename(clean_base)
+    norm_rel = os.path.normpath(rel_clean)
+    rel_parts = norm_rel.split(os.sep)
+    lower_rel_parts = [p.lower() for p in rel_parts]
+    if base_name and base_name.lower() in lower_rel_parts:
+        idx = len(lower_rel_parts) - 1 - lower_rel_parts[::-1].index(base_name.lower())
+        if idx < len(rel_parts) - 1:
+            norm_rel = os.path.join(*rel_parts[idx + 1:])
+        else:
+            norm_rel = ""
+    
+    clean_target = os.path.abspath(os.path.join(clean_base, norm_rel))
     return clean_target
 
 def get_directory_tree(folder_path: str, max_depth: int = 4, current_depth: int = 0) -> List[Dict[str, Any]]:

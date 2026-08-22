@@ -89,42 +89,37 @@ export const validateAndSetWorkspaceFolder = async (folderPath) => {
 };
 
 /**
- * Normalizes relative path, stripping drive letters (C:\...) and base folder prefixes
+ * Normalizes relative path, stripping drive letters (C:\...), OneDrive and Desktop prefixes
  */
 export const normalizeRelativePath = (rawPath, baseFolderPath = '', baseFolderName = '') => {
   if (!rawPath) return '';
   let p = String(rawPath).trim().replace(/^["']|["']$/g, '');
   p = p.replace(/\\/g, '/');
 
-  // Strip exact baseFolderPath if present
-  if (baseFolderPath) {
-    const cleanBase = baseFolderPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    if (p.toLowerCase().startsWith(cleanBase.toLowerCase() + '/')) {
-      p = p.slice(cleanBase.length + 1);
-    }
+  const cleanBase = (baseFolderPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const cleanName = (baseFolderName || '').replace(/\\/g, '/').replace(/\/+$/, '') || (cleanBase ? cleanBase.split('/').pop() : '');
+
+  // 1. If path starts with exact base folder path (case-insensitive)
+  if (cleanBase && p.toLowerCase().startsWith(cleanBase.toLowerCase() + '/')) {
+    p = p.slice(cleanBase.length + 1);
   }
 
-  // Strip exact baseFolderName if present at beginning
-  if (baseFolderName) {
-    const cleanName = baseFolderName.replace(/\\/g, '/').replace(/\/+$/, '');
+  // 2. If path starts with or contains base folder name (e.g. OneDrive/Desktop/Prova/ciao.txt)
+  if (cleanName) {
     if (p.toLowerCase().startsWith(cleanName.toLowerCase() + '/')) {
       p = p.slice(cleanName.length + 1);
     }
+    const marker = '/' + cleanName.toLowerCase() + '/';
+    const lastIdx = p.toLowerCase().lastIndexOf(marker);
+    if (lastIdx !== -1) {
+      p = p.slice(lastIdx + marker.length);
+    }
   }
 
-  // If path still contains Windows drive letter like C:/Users/.../Prova/file.txt
+  // 3. If path still contains a drive letter (e.g. C:/...)
   if (/^[a-zA-Z]:\//i.test(p)) {
     const parts = p.split('/');
-    if (baseFolderName) {
-      const idx = parts.map((x) => x.toLowerCase()).lastIndexOf(baseFolderName.toLowerCase());
-      if (idx >= 0 && idx < parts.length - 1) {
-        p = parts.slice(idx + 1).join('/');
-      } else {
-        p = parts[parts.length - 1];
-      }
-    } else {
-      p = parts[parts.length - 1];
-    }
+    p = parts[parts.length - 1];
   }
 
   return p.replace(/^\/+/, '');
