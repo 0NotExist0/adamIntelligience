@@ -417,29 +417,52 @@ async def serverless_run_command(req: WorkspaceRunCommandRequest):
 
 @app.post("/api/workspace/agent-task")
 async def serverless_agent_task(req: WorkspaceAgentTaskRequest):
-    # Genera risposta con OpenRouter LLM
-    or_mgr = OpenRouterManager()
-    sys_prompt = f"Sei un Agente AI di Workspace operativo sulla cartella: {req.folder_path}."
+    sys_prompt = f"""Sei un Agente AI di Ingegneria del Software Autonomo ("Workspace Coding Agent").
+Il tuo obiettivo è operare DIRETTAMENTE sui file della cartella di lavoro ({req.folder_path}) dell'utente.
+
+TOOL A DISPOSIZIONE:
+1. [list_files()] -> Elenca i file
+2. [read_file(path="nome_file.ext")] -> Legge il contenuto
+3. [write_file(path="nome_file.ext", content="...")] -> Crea o sovrascrive un file direttamente sul disco del PC dell'utente
+4. [edit_file(path="nome_file.ext", target="vecchio", replacement="nuovo")] -> Modifica una parte del file
+5. [delete_file(path="nome_file.ext")] -> Elimina un file
+
+Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|>[tool_name(...)]<|tool_call_end|>. Formula spiegazioni chiare in italiano."""
+
     conv = [{"role": "system", "content": sys_prompt}]
     if req.messages:
         conv.extend([m for m in req.messages if m.get("role") != "system"])
     if not conv or conv[-1].get("content") != req.task_prompt:
         conv.append({"role": "user", "content": req.task_prompt})
     
-    llm_res = await or_mgr.chat(
+    llm_res = await call_openrouter(
         messages=conv,
         model=req.model or "openrouter/free",
         temperature=0.2,
         max_tokens=4096
     )
     
+    content = llm_res.get("content", "")
+    tool_matches = re.findall(r"\[(write_file|read_file|edit_file|delete_file|list_files)\s*\(([\s\S]*?)\)\]", content)
+    steps = []
+    for idx, (tname, targs) in enumerate(tool_matches, start=1):
+        steps.append({
+            "iteration": idx,
+            "tool": tname,
+            "args": targs,
+            "result": {"output": f"Tool {tname} pianificato"}
+        })
+
+    cleaned = re.sub(r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>", "", content).strip()
+    cleaned = re.sub(r"\[(list_files|read_file|write_file|edit_file|delete_file)\s*\([\s\S]*?\)\]", "", cleaned).strip()
+
     return {
         "success": llm_res.get("success", False),
-        "content": llm_res.get("content", ""),
+        "content": cleaned or content,
         "error": llm_res.get("error"),
         "folder": req.folder_path,
-        "steps": [],
-        "steps_count": 0,
+        "steps": steps,
+        "steps_count": len(steps),
         "model": req.model,
         "iterations": 1
     }

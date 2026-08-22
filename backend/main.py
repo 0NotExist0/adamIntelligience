@@ -704,23 +704,26 @@ async def run_workspace_command_endpoint(req: WorkspaceRunCommandRequest):
 
 @app.post("/api/workspace/agent-task")
 async def run_workspace_agent_task(req: WorkspaceAgentTaskRequest):
-    raw = req.folder_path.strip().strip('"').strip("'")
-    folder = os.path.abspath(raw)
-    if not os.path.exists(folder):
-        try:
-            os.makedirs(folder, exist_ok=True)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Cartella non trovata e impossibile crearla: {e}")
-    
-    runner = WorkspaceAgentRunner()
-    res = await runner.run_task(
-        folder_path=folder,
-        task_prompt=req.task_prompt,
-        messages=req.messages,
-        model=req.model or "openrouter/free",
-        max_iterations=req.max_iterations or 5
-    )
-    return res
+    try:
+        raw = req.folder_path.strip().strip('"').strip("'")
+        folder = os.path.abspath(raw)
+        if not os.path.exists(folder):
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except Exception as e:
+                return {"success": False, "error": f"Impossibile creare la cartella: {e}"}
+        
+        runner = WorkspaceAgentRunner()
+        res = await runner.run_task(
+            folder_path=folder,
+            task_prompt=req.task_prompt,
+            messages=req.messages,
+            model=req.model or "openrouter/free",
+            max_iterations=req.max_iterations or 5
+        )
+        return res
+    except Exception as e:
+        return {"success": False, "error": f"Errore esecuzione: {str(e)}"}
 
 # --- CHAT SESSIONS PERSISTENCE ROUTES ---
 @app.get("/api/workspace/sessions")
