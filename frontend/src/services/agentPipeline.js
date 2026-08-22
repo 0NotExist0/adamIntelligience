@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getMemories } from './memory';
 import { sendOpenRouterChat, streamOpenRouterChat, getOpenRouterKey } from './openrouter';
+import { multiMethodWebSearch } from './webSearch';
 
 const META_ANALYZER_PROMPT = `Sei un Meta-Agente AI specializzato nell'analisi preliminare dei prompt e nell'ottimizzazione degli iperparametri di inferenza.
 Il tuo compito è analizzare il prompt dell'utente e determinare:
@@ -137,51 +138,10 @@ export const runMetaPromptAnalysis = async (prompt) => {
 };
 
 /**
- * Web Search Query Executor
+ * Web Search Multi-Method Query Executor
  */
 export const executeWebSearch = async (query) => {
-  if (!query || !query.trim()) return { results: [], summary_text: '' };
-
-  try {
-    const res = await axios.post('/api/agent/web-search', { query, max_results: 4 }, { timeout: 8000 });
-    if (res.data && res.data.results) {
-      return res.data;
-    }
-  } catch (e) {
-    // Fallback search via Wikipedia open API directly from browser
-    try {
-      const cleanQ = encodeURIComponent(query.trim());
-      const wikiRes = await axios.get(
-        `https://it.wikipedia.org/w/api.php?action=opensearch&search=${cleanQ}&limit=3&namespace=0&format=json&origin=*`,
-        { timeout: 5000 }
-      );
-      if (wikiRes.data && wikiRes.data[1] && wikiRes.data[1].length > 0) {
-        const titles = wikiRes.data[1];
-        const snippets = wikiRes.data[2] || [];
-        const urls = wikiRes.data[3] || [];
-        const results = titles.map((t, idx) => ({
-          title: t,
-          snippet: snippets[idx] || '',
-          url: urls[idx] || `https://it.wikipedia.org/wiki/${t}`,
-          source: 'Wikipedia IT'
-        }));
-        
-        const summary_text = `### 🌐 RISULTATI DAL WEB (Wikipedia):\n` +
-          results.map((r, i) => `${i + 1}. **${r.title}**: ${r.snippet} [${r.url}]`).join('\n');
-
-        return {
-          query,
-          results,
-          results_count: results.length,
-          summary_text
-        };
-      }
-    } catch (err) {
-      // ignore
-    }
-  }
-
-  return { results: [], summary_text: '' };
+  return await multiMethodWebSearch(query);
 };
 
 /**

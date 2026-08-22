@@ -25,6 +25,7 @@ import { CURATED_POPULAR_MODELS, sendOpenRouterChat, streamOpenRouterChat } from
 import { runAgentChatPipeline, runAgentChatPipelineStream } from '../services/agentPipeline';
 import ModelPickerModal from '../components/ModelPickerModal';
 import AgentPipelineBadge from '../components/AgentPipelineBadge';
+import WebSearchInspectorModal from '../components/WebSearchInspectorModal';
 import { useToast } from '../components/Toast';
 
 export default function InferencePlayground({ initialModel }) {
@@ -34,6 +35,7 @@ export default function InferencePlayground({ initialModel }) {
   });
   const [customModel, setCustomModel] = useState('');
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isWebInspectorOpen, setIsWebInspectorOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -237,6 +239,16 @@ export default function InferencePlayground({ initialModel }) {
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsWebInspectorOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 border border-blue-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+            title="Apri console di ispezione e fact-checking web"
+          >
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>Console Fact-Checking Web</span>
+          </button>
+
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
@@ -585,6 +597,14 @@ export default function InferencePlayground({ initialModel }) {
           addToast(`Modello cambiato in "${modelId}"`, 'success');
         }}
       />
+
+      {/* Web Fact-Checking Console Inspector Modal */}
+      {isWebInspectorOpen && (
+        <WebSearchInspectorModal
+          isOpen={isWebInspectorOpen}
+          onClose={() => setIsWebInspectorOpen(false)}
+        />
+      )}
     </div>
   );
 }
