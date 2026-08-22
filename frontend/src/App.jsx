@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 
 import DashboardOverview from './pages/DashboardOverview';
+import WorkspaceAgentStudio from './pages/WorkspaceAgentStudio';
 import ModelsManager from './pages/ModelsManager';
 import ChatbotsManager from './pages/ChatbotsManager';
 import DatasetsManager from './pages/DatasetsManager';
@@ -178,6 +179,10 @@ function DashboardApp() {
               onOpenOpenRouter={() => setIsOpenRouterModalOpen(true)}
               onOpenChatWithModel={handleChatWithModel}
             />
+          )}
+
+          {activeTab === 'workspace' && (
+            <WorkspaceAgentStudio />
           )}
 
           {activeTab === 'models' && (

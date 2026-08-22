@@ -127,49 +127,69 @@ export default function DashboardOverview({
       </div>
 
       {/* Quick Action Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div 
+          onClick={() => onNavigate('workspace')}
+          className="glass-card p-5 rounded-3xl border border-purple-500/40 hover:border-purple-500/80 cursor-pointer group transition-all bg-gradient-to-br from-purple-950/30 to-slate-900 shadow-lg hover:scale-[1.02]"
+        >
+          <div className="w-11 h-11 rounded-2xl bg-purple-600/30 text-purple-300 border border-purple-500/40 flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform">
+            📁
+          </div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
+              Agente Cartella
+            </h3>
+            <span className="text-[9px] bg-purple-500/20 text-purple-200 px-1.5 py-0.5 rounded-full font-bold">
+              NUOVO
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Indica una cartella: l'AI leggerà il codice, creerà file, eseguirà comandi e salverà le chat.
+          </p>
+        </div>
+
         <div 
           onClick={onOpenCreateChatbot}
-          className="glass-card p-6 rounded-3xl border border-purple-500/30 hover:border-purple-500/60 cursor-pointer group transition-all"
+          className="glass-card p-5 rounded-3xl border border-purple-500/30 hover:border-purple-500/60 cursor-pointer group transition-all"
         >
-          <div className="w-12 h-12 rounded-2xl bg-purple-600/20 text-purple-300 border border-purple-500/30 flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition-transform">
+          <div className="w-11 h-11 rounded-2xl bg-purple-600/20 text-purple-300 border border-purple-500/30 flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform">
             🤖
           </div>
-          <h3 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+          <h3 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
             Crea Chatbot AI
           </h3>
           <p className="text-xs text-slate-400 mt-1">
-            Configura un assistente conversazionale con avatar, prompt personalizzato e modello OpenRouter.
+            Configura un assistente conversazionale con avatar, prompt personalizzato e modello.
           </p>
         </div>
 
         <div 
           onClick={onOpenCreateModel}
-          className="glass-card p-6 rounded-3xl border border-blue-500/30 hover:border-blue-500/60 cursor-pointer group transition-all"
+          className="glass-card p-5 rounded-3xl border border-blue-500/30 hover:border-blue-500/60 cursor-pointer group transition-all"
         >
-          <div className="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-300 border border-blue-500/30 flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition-transform">
+          <div className="w-11 h-11 rounded-2xl bg-blue-600/20 text-blue-300 border border-blue-500/30 flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform">
             💾
           </div>
-          <h3 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">
+          <h3 className="text-sm font-bold text-white group-hover:text-blue-300 transition-colors">
             Modello per Drive
           </h3>
           <p className="text-xs text-slate-400 mt-1">
-            Definisci pesi, istruzioni e architettura per esportarli con 1 click nel tuo Google Drive.
+            Definisci pesi e istruzioni per esportarli con 1 click nel tuo Google Drive.
           </p>
         </div>
 
         <div 
           onClick={() => onNavigate('datasets')}
-          className="glass-card p-6 rounded-3xl border border-emerald-500/30 hover:border-emerald-500/60 cursor-pointer group transition-all"
+          className="glass-card p-5 rounded-3xl border border-emerald-500/30 hover:border-emerald-500/60 cursor-pointer group transition-all"
         >
-          <div className="w-12 h-12 rounded-2xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition-transform">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform">
             📊
           </div>
-          <h3 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors">
+          <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">
             Dataset con AI
           </h3>
           <p className="text-xs text-slate-400 mt-1">
-            Genera automaticamente coppie di istruzioni e risposte sintetiche per il fine-tuning.
+            Genera automaticamente coppie di istruzioni e risposte per fine-tuning.
           </p>
         </div>
       </div>

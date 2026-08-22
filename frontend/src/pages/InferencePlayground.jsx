@@ -19,10 +19,13 @@ import {
   CheckCircle2,
   Brain,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Save,
+  Download
 } from 'lucide-react';
 import { CURATED_POPULAR_MODELS, sendOpenRouterChat, streamOpenRouterChat } from '../services/openrouter';
 import { runAgentChatPipeline, runAgentChatPipelineStream } from '../services/agentPipeline';
+import { saveChatSession, exportChatSessionAsMarkdown } from '../services/storage';
 import ModelPickerModal from '../components/ModelPickerModal';
 import AgentPipelineBadge from '../components/AgentPipelineBadge';
 import WebSearchInspectorModal from '../components/WebSearchInspectorModal';
@@ -224,6 +227,34 @@ export default function InferencePlayground({ initialModel }) {
     ]);
   };
 
+  const handleSavePlaygroundChat = () => {
+    if (messages.length <= 1) {
+      addToast('Nessun messaggio da salvare', 'info');
+      return;
+    }
+    const firstUserMsg = messages.find((m) => m.role === 'user');
+    const title = firstUserMsg ? firstUserMsg.content.slice(0, 30) : 'Playground Chat';
+    saveChatSession({
+      title,
+      model: selectedModel,
+      messages
+    });
+    addToast(`Chat "${title}" salvata nella cronologia!`, 'success');
+  };
+
+  const handleExportPlaygroundChat = () => {
+    if (messages.length <= 1) {
+      addToast('Nessun messaggio da esportare', 'info');
+      return;
+    }
+    exportChatSessionAsMarkdown({
+      title: `Playground_${selectedModel.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      model: selectedModel,
+      messages
+    });
+    addToast('Chat esportata in formato Markdown!', 'success');
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto h-[calc(100vh-5rem)] flex flex-col space-y-4 animate-in fade-in duration-300">
       {/* Header */}
@@ -241,12 +272,32 @@ export default function InferencePlayground({ initialModel }) {
         <div className="flex items-center gap-2.5">
           <button
             type="button"
+            onClick={handleSavePlaygroundChat}
+            className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+            title="Salva chat nella cronologia"
+          >
+            <Save className="w-3.5 h-3.5 text-purple-400" />
+            <span>Salva Chat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportPlaygroundChat}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Esporta Markdown"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Esporta</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsWebInspectorOpen(true)}
             className="px-3.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 border border-blue-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
             title="Apri console di ispezione e fact-checking web"
           >
             <Globe className="w-3.5 h-3.5 text-blue-400" />
-            <span>Console Fact-Checking Web</span>
+            <span>Console Web</span>
           </button>
 
           <button
@@ -254,12 +305,12 @@ export default function InferencePlayground({ initialModel }) {
             className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
           >
             <Layers className="w-3.5 h-3.5 text-purple-400" />
-            <span>Sfoglia Catalogo (400+ Modelli)</span>
+            <span>Catalogo (400+)</span>
           </button>
 
           <button
             onClick={clearChat}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Azzera</span>

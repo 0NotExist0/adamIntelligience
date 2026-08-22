@@ -1,23 +1,31 @@
 import { multiMethodWebSearch, scrapeWebsiteContent } from './webSearch';
 import { getMemories } from './memory';
+import { 
+  getActiveWorkspaceFolder, 
+  getWorkspaceTree, 
+  getWorkspaceFileContent, 
+  saveWorkspaceFile, 
+  runWorkspaceCommand 
+} from './workspaceAgent';
 
 // AI Studio Pro - Client-Side Autonomous Agent Tools Engine
 
 export const AGENT_TOOLS_DEFINITIONS = `
 Disponi dei seguenti TOOL eseguibili per risolvere autonomamente le task dell'utente:
-1. web_search(query: string): Esegue una ricerca web multi-fonte (DuckDuckGo, Wikipedia, OpenAlex) in tempo reale.
-2. explore_site(url: string): Esplora e legge il testo completo, gli orari, le tabelle e gli articoli pubblicati su uno specifico URL o sito web.
+1. web_search(query: string): Esegue una ricerca web multi-fonte in tempo reale.
+2. explore_site(url: string): Esplora e legge il testo completo da una URL o sito web.
 3. memory_search(category?: string): Consulta le regole e i fatti salvati nel Memory Vault dell'utente.
 4. current_time(): Restituisce la data e l'ora attuali esatte.
+5. read_file(path: string): Legge il contenuto di un file nella cartella di lavoro attiva.
+6. write_file(path: string, content: string): Salva o crea un file nella cartella di lavoro attiva.
+7. run_command(command: string): Esegue un comando da terminale nella cartella di lavoro.
 
 Se hai bisogno di informazioni esterne o verificare fatti, invoca il tool nel formato:
 <|tool_call_start|>[web_search(query="tua query di ricerca")]<|tool_call_end|>
-oppure per leggere un sito specifico:
-<|tool_call_start|>[explore_site(url="https://...")]<|tool_call_end|>
+oppure per operare sui file della cartella:
+<|tool_call_start|>[read_file(path="nome_file.js")]<|tool_call_end|>
 oppure
-\`\`\`tool_call
-{"tool": "web_search", "query": "tua query"}
-\`\`\`
+<|tool_call_start|>[run_command(command="npm run build")]<|tool_call_end|>
 Quando ricevi il risultato del tool, formula la risposta finale completa in lingua italiana.
 `;
 
@@ -127,6 +135,24 @@ export const executeAgentTool = async (toolName, param) => {
         ? `[MEMORIA VAULT TROVATA]:\n` + filtered.map((m, i) => `${i + 1}. [${m.category}] ${m.text}`).join('\n')
         : 'Nessun vincolo trovato nella memoria.';
       metadata = { memoriesCount: filtered.length };
+    } else if (cleanName === 'read_file') {
+      const activeFolder = getActiveWorkspaceFolder();
+      if (!activeFolder) {
+        output = 'Nessuna cartella di lavoro attiva selezionata. Seleziona una cartella nello studio Workspace.';
+      } else {
+        const fileRes = await getWorkspaceFileContent(activeFolder, param);
+        output = fileRes.success ? `=== CONTENUTO DI ${param} ===\n${fileRes.content}` : `Errore lettura: ${fileRes.error}`;
+        metadata = { path: param, sizeBytes: fileRes.size_bytes };
+      }
+    } else if (cleanName === 'run_command') {
+      const activeFolder = getActiveWorkspaceFolder();
+      if (!activeFolder) {
+        output = 'Nessuna cartella di lavoro attiva selezionata.';
+      } else {
+        const cmdRes = await runWorkspaceCommand(activeFolder, param);
+        output = `[ESECUZIONE]: ${param}\n[EXIT]: ${cmdRes.returncode}\n${cmdRes.stdout ? `[STDOUT]:\n${cmdRes.stdout}\n` : ''}${cmdRes.stderr ? `[STDERR]:\n${cmdRes.stderr}\n` : ''}`;
+        metadata = { command: param, success: cmdRes.success };
+      }
     } else if (cleanName === 'current_time') {
       const now = new Date();
       output = `Data e ora corrente: ${now.toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;

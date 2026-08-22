@@ -530,6 +530,183 @@ async def agent_chat(req: AgentChatRequest):
         force_web_search=req.force_web_search
     )
 
+# --- WORKSPACE AGENT & LOCAL FOLDER MANAGEMENT ---
+from backend.workspace_agent import (
+    get_directory_tree,
+    list_flat_files,
+    read_file_content,
+    write_file_content,
+    delete_workspace_file,
+    search_code_in_workspace,
+    execute_workspace_command,
+    WorkspaceAgentRunner
+)
+
+class WorkspaceSetFolderRequest(BaseModel):
+    folder_path: str
+
+class WorkspaceSaveFileRequest(BaseModel):
+    folder_path: str
+    relative_path: str
+    content: str
+
+class WorkspaceDeleteFileRequest(BaseModel):
+    folder_path: str
+    relative_path: str
+
+class WorkspaceRunCommandRequest(BaseModel):
+    folder_path: str
+    command: str
+    timeout_seconds: Optional[int] = 30
+
+class WorkspaceAgentTaskRequest(BaseModel):
+    folder_path: str
+    task_prompt: str
+    messages: Optional[List[Dict[str, Any]]] = None
+    model: str = "openrouter/free"
+    max_iterations: Optional[int] = 5
+
+class WorkspaceSaveSessionRequest(BaseModel):
+    id: str
+    title: str
+    folder_path: Optional[str] = ""
+    messages: List[Dict[str, Any]]
+    model: Optional[str] = ""
+    timestamp: Optional[int] = None
+
+SESSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_sessions.json")
+
+def load_workspace_sessions() -> List[Dict[str, Any]]:
+    if not os.path.exists(SESSIONS_FILE):
+        return []
+    try:
+        with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_workspace_sessions(sessions: List[Dict[str, Any]]):
+    try:
+        with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(sessions, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving sessions: {e}")
+
+@app.get("/api/workspace/info")
+async def get_workspace_info():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    user_home = os.path.expanduser("~")
+    desktop = os.path.join(user_home, "Desktop")
+    
+    return {
+        "current_project_dir": project_root,
+        "default_folder": project_root,
+        "user_home": user_home,
+        "desktop_dir": desktop if os.path.exists(desktop) else user_home,
+        "platform": sys.platform
+    }
+
+@app.post("/api/workspace/set-folder")
+async def set_workspace_folder(req: WorkspaceSetFolderRequest):
+    folder = os.path.abspath(req.folder_path.strip())
+    if not os.path.exists(folder):
+        raise HTTPException(status_code=404, detail=f"La cartella specificata non esiste: {folder}")
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=400, detail=f"Il percorso specificato non è una cartella: {folder}")
+    
+    files = list_flat_files(folder, max_files=50)
+    return {
+        "success": True,
+        "folder_path": folder,
+        "folder_name": os.path.basename(folder),
+        "total_files_sample": len(files)
+    }
+
+@app.get("/api/workspace/tree")
+async def get_workspace_tree(folder_path: str = ""):
+    folder = os.path.abspath(folder_path.strip() or os.path.join(os.path.dirname(__file__), ".."))
+    if not os.path.exists(folder):
+        raise HTTPException(status_code=404, detail="Cartella non trovata")
+    tree = get_directory_tree(folder, max_depth=5)
+    return {"folder_path": folder, "tree": tree}
+
+@app.get("/api/workspace/file-content")
+async def get_workspace_file_content(folder_path: str, relative_path: str):
+    folder = os.path.abspath(folder_path.strip())
+    res = read_file_content(folder, relative_path)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
+
+@app.post("/api/workspace/save-file")
+async def save_workspace_file(req: WorkspaceSaveFileRequest):
+    folder = os.path.abspath(req.folder_path.strip())
+    res = write_file_content(folder, req.relative_path, req.content)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
+
+@app.post("/api/workspace/delete-file")
+async def delete_workspace_file_endpoint(req: WorkspaceDeleteFileRequest):
+    folder = os.path.abspath(req.folder_path.strip())
+    res = delete_workspace_file(folder, req.relative_path)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
+
+@app.post("/api/workspace/run-command")
+async def run_workspace_command_endpoint(req: WorkspaceRunCommandRequest):
+    folder = os.path.abspath(req.folder_path.strip())
+    res = execute_workspace_command(folder, req.command, timeout_seconds=req.timeout_seconds or 30)
+    return res
+
+@app.post("/api/workspace/agent-task")
+async def run_workspace_agent_task(req: WorkspaceAgentTaskRequest):
+    runner = WorkspaceAgentRunner()
+    res = await runner.run_task(
+        folder_path=req.folder_path,
+        task_prompt=req.task_prompt,
+        messages=req.messages,
+        model=req.model or "openrouter/free",
+        max_iterations=req.max_iterations or 5
+    )
+    return res
+
+# --- CHAT SESSIONS PERSISTENCE ROUTES ---
+@app.get("/api/workspace/sessions")
+async def list_chat_sessions():
+    sessions = load_workspace_sessions()
+    return {"sessions": sessions}
+
+@app.post("/api/workspace/sessions/save")
+async def save_chat_session(req: WorkspaceSaveSessionRequest):
+    sessions = load_workspace_sessions()
+    existing_idx = next((i for i, s in enumerate(sessions) if s.get("id") == req.id), None)
+    
+    session_data = {
+        "id": req.id,
+        "title": req.title,
+        "folder_path": req.folder_path,
+        "messages": req.messages,
+        "model": req.model,
+        "timestamp": req.timestamp or int(asyncio.get_event_loop().time() * 1000)
+    }
+    
+    if existing_idx is not None:
+        sessions[existing_idx] = session_data
+    else:
+        sessions.insert(0, session_data)
+        
+    save_workspace_sessions(sessions)
+    return {"success": True, "session": session_data}
+
+@app.delete("/api/workspace/sessions/{session_id}")
+async def delete_chat_session(session_id: str):
+    sessions = load_workspace_sessions()
+    updated = [s for s in sessions if s.get("id") != session_id]
+    save_workspace_sessions(updated)
+    return {"success": True, "deleted_id": session_id}
+
 # --- SERVE FRONTEND STATIC FILES ---
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

@@ -328,3 +328,63 @@ Fornisci una risposta esatta, chiara, verificata e priva di dubbi."""
         "web_search_performed": bool(web_res.get("results")),
         "memory_applied_count": len(memories)
     }
+
+# --- WORKSPACE SERVERLESS STUB / STORAGE ---
+_WORKSPACE_SESSIONS = []
+
+class WorkspaceSetFolderRequest(BaseModel):
+    folder_path: str
+
+class WorkspaceSaveFileRequest(BaseModel):
+    folder_path: str
+    relative_path: str
+    content: str
+
+class WorkspaceRunCommandRequest(BaseModel):
+    folder_path: str
+    command: str
+
+class WorkspaceSaveSessionRequest(BaseModel):
+    id: str
+    title: str
+    folder_path: Optional[str] = ""
+    messages: List[Dict[str, Any]]
+    model: Optional[str] = ""
+    timestamp: Optional[int] = None
+
+@app.get("/api/workspace/info")
+async def serverless_workspace_info():
+    return {
+        "current_project_dir": "/workspace",
+        "default_folder": "/workspace",
+        "user_home": "/home",
+        "desktop_dir": "/home/Desktop",
+        "platform": "serverless"
+    }
+
+@app.post("/api/workspace/set-folder")
+async def serverless_set_folder(req: WorkspaceSetFolderRequest):
+    return {"success": True, "folder_path": req.folder_path, "folder_name": req.folder_path.split("/")[-1] or req.folder_path}
+
+@app.get("/api/workspace/sessions")
+async def serverless_list_sessions():
+    return {"sessions": _WORKSPACE_SESSIONS}
+
+@app.post("/api/workspace/sessions/save")
+async def serverless_save_session(req: WorkspaceSaveSessionRequest):
+    global _WORKSPACE_SESSIONS
+    existing = next((i for i, s in enumerate(_WORKSPACE_SESSIONS) if s.get("id") == req.id), None)
+    sess = {
+        "id": req.id,
+        "title": req.title,
+        "folder_path": req.folder_path,
+        "messages": req.messages,
+        "model": req.model,
+        "timestamp": req.timestamp or 0
+    }
+    if existing is not None:
+        _WORKSPACE_SESSIONS[existing] = sess
+    else:
+        _WORKSPACE_SESSIONS.insert(0, sess)
+    return {"success": True, "session": sess}
+

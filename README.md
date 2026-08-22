@@ -6,6 +6,15 @@ Una moderna e potente Web Application per creare, testare e gestire modelli di I
 
 ## 🌟 Caratteristiche Principali
 
+- **📁 Agente AI di Workspace & Cartella Locale**:
+  - **Specifica qualsiasi cartella di lavoro**: L'agente esplora la cartella, legge i file e mappa l'architettura.
+  - **Editing e Creazione File**: Modifica o scrive file di codice e documentazione in modo autonomo.
+  - **Terminale Integrato**: Esegue comandi shell (`build`, `test`, `git`, `python`, `npm`) con log in tempo reale.
+  - **Ciclo ReAct Multi-Step**: L'agente esegue cicli completi di pensiero, azione sui file e validazione.
+- **💬 Salvataggio & Gestione Cronologia Chat**:
+  - Salva le sessioni di conversazione per riprenderle quando vuoi.
+  - Esportazione istantanea in **Markdown** o formato **JSON**.
+  - Sincronizzazione ed esportazione per Google Drive.
 - **🧠 Agente AI con Calibrazione Dinamica & Fact-Checking**:
   - **Meta-Analisi del Prompt**: Calcolo dinamico e autonomo di **Temperatura** e **Max Tokens** ottimali prima della risposta.
   - **Priorità Assoluta Memory Vault**: Le regole e i fatti salvati localmente prevalgono su qualsiasi informazione contraria trovata sul web o nei modelli.

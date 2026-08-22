@@ -10,6 +10,7 @@ import {
   Sparkles, 
   ExternalLink,
   FolderDown,
+  FolderCheck,
   Brain
 } from 'lucide-react';
 import { openGoogleDriveFolder } from '../services/storage';
@@ -17,6 +18,7 @@ import { openGoogleDriveFolder } from '../services/storage';
 export default function Sidebar({ activeTab, onNavigate, onOpenCopilot, onOpenMemory, stats }) {
   const navItems = [
     { id: 'dashboard', label: 'Panoramica Hub', icon: LayoutDashboard, badge: null },
+    { id: 'workspace', label: 'Agente Cartella', icon: FolderCheck, badge: 'AGENT' },
     { id: 'models', label: 'Modelli & Drive', icon: Cpu, badge: stats?.modelsCount || null },
     { id: 'chatbots', label: 'Chatbot Studio', icon: Bot, badge: stats?.chatbotsCount || null },
     { id: 'datasets', label: 'Dataset di Training', icon: Database, badge: stats?.datasetsCount || null },

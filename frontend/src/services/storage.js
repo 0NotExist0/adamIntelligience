@@ -269,7 +269,86 @@ export const getGoogleDriveUrl = () => {
   return 'https://drive.google.com/drive/my-drive';
 };
 
+// --- CHAT SESSIONS PERSISTENCE ---
+const CHAT_SESSIONS_KEY = 'aistudio_saved_chat_sessions';
+
+export const getSavedChatSessions = () => {
+  try {
+    const key = getUserScopedKey(CHAT_SESSIONS_KEY);
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveChatSession = (session) => {
+  const sessions = getSavedChatSessions();
+  const existingIdx = sessions.findIndex((s) => s.id === session.id);
+  const updatedSession = {
+    ...session,
+    id: session.id || `session-${Date.now()}`,
+    title: session.title || 'Nuova Conversazione',
+    timestamp: session.timestamp || Date.now(),
+    messages: session.messages || [],
+    folderPath: session.folderPath || '',
+    model: session.model || 'openrouter/free'
+  };
+
+  if (existingIdx >= 0) {
+    sessions[existingIdx] = updatedSession;
+  } else {
+    sessions.unshift(updatedSession);
+  }
+
+  const key = getUserScopedKey(CHAT_SESSIONS_KEY);
+  localStorage.setItem(key, JSON.stringify(sessions));
+  return updatedSession;
+};
+
+export const deleteChatSession = (id) => {
+  const sessions = getSavedChatSessions().filter((s) => s.id !== id);
+  const key = getUserScopedKey(CHAT_SESSIONS_KEY);
+  localStorage.setItem(key, JSON.stringify(sessions));
+  return sessions;
+};
+
+export const exportChatSessionAsMarkdown = (session) => {
+  const lines = [
+    `# 💬 ${session.title || 'Conversazione AI Studio Pro'}`,
+    `*Data*: ${new Date(session.timestamp || Date.now()).toLocaleString('it-IT')}`,
+    session.folderPath ? `*Cartella Workspace*: \`${session.folderPath}\`` : '',
+    session.model ? `*Modello Utilizzato*: \`${session.model}\`` : '',
+    '\n---\n'
+  ].filter(Boolean);
+
+  (session.messages || []).forEach((m) => {
+    const roleLabel = m.role === 'user' ? '👤 **Utente**' : '🤖 **Agente AI**';
+    lines.push(`### ${roleLabel}`);
+    lines.push(m.content || '');
+    if (m.agentTrace?.steps?.length) {
+      lines.push('\n**Operazioni eseguite:**');
+      m.agentTrace.steps.forEach((s) => {
+        lines.push(`- Tool \`${s.tool}\`: ${s.result?.output?.slice(0, 120) || 'OK'}`);
+      });
+    }
+    lines.push('\n---\n');
+  });
+
+  const mdContent = lines.join('\n');
+  const blob = new Blob([mdContent], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(session.title || 'chat_export').replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 export const openGoogleDriveFolder = () => {
   window.open(getGoogleDriveUrl(), '_blank');
 };
+
 
