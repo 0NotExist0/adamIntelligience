@@ -371,28 +371,64 @@ export const buildTreeFromDirectoryHandle = async (dirHandle, pathPrefix = '', m
   if (!dirHandle || currentDepth >= maxDepth) return [];
   const entries = [];
   try {
-    for await (const [name, handle] of dirHandle.entries()) {
-      if (name.startsWith('.') || name === 'node_modules' || name === '__pycache__' || name === 'dist') {
-        continue;
+    if (typeof dirHandle.values === 'function') {
+      for await (const handle of dirHandle.values()) {
+        const name = handle.name;
+        if (!name || name.startsWith('.') || name === 'node_modules' || name === '__pycache__' || name === 'dist') {
+          continue;
+        }
+        const relPath = pathPrefix ? `${pathPrefix}/${name}` : name;
+        if (handle.kind === 'directory') {
+          const children = await buildTreeFromDirectoryHandle(handle, relPath, maxDepth, currentDepth + 1);
+          entries.push({
+            name,
+            path: relPath,
+            is_dir: true,
+            children
+          });
+        } else {
+          let size = 0;
+          try {
+            const file = await handle.getFile();
+            size = file.size;
+          } catch (e) {}
+          entries.push({
+            name,
+            path: relPath,
+            is_dir: false,
+            size,
+            extension: name.includes('.') ? name.split('.').pop() : ''
+          });
+        }
       }
-      const relPath = pathPrefix ? `${pathPrefix}/${name}` : name;
-      if (handle.kind === 'directory') {
-        const children = await buildTreeFromDirectoryHandle(handle, relPath, maxDepth, currentDepth + 1);
-        entries.push({
-          name,
-          path: relPath,
-          is_dir: true,
-          children
-        });
-      } else {
-        const file = await handle.getFile();
-        entries.push({
-          name,
-          path: relPath,
-          is_dir: false,
-          size: file.size,
-          extension: name.includes('.') ? name.split('.').pop() : ''
-        });
+    } else if (typeof dirHandle.entries === 'function') {
+      for await (const [name, handle] of dirHandle.entries()) {
+        if (!name || name.startsWith('.') || name === 'node_modules' || name === '__pycache__' || name === 'dist') {
+          continue;
+        }
+        const relPath = pathPrefix ? `${pathPrefix}/${name}` : name;
+        if (handle.kind === 'directory') {
+          const children = await buildTreeFromDirectoryHandle(handle, relPath, maxDepth, currentDepth + 1);
+          entries.push({
+            name,
+            path: relPath,
+            is_dir: true,
+            children
+          });
+        } else {
+          let size = 0;
+          try {
+            const file = await handle.getFile();
+            size = file.size;
+          } catch (e) {}
+          entries.push({
+            name,
+            path: relPath,
+            is_dir: false,
+            size,
+            extension: name.includes('.') ? name.split('.').pop() : ''
+          });
+        }
       }
     }
   } catch (err) {

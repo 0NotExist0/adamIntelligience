@@ -148,6 +148,9 @@ export default function WorkspaceAgentStudio() {
     addToast('Chiave API OpenRouter salvata con successo!', 'success');
   };
 
+  const [isHandleConnected, setIsHandleConnected] = useState(false);
+  const [needsPermissionGrant, setNeedsPermissionGrant] = useState(false);
+
   const messagesEndRef = useRef(null);
   const terminalEndRef = useRef(null);
 
@@ -172,13 +175,22 @@ export default function WorkspaceAgentStudio() {
       if (storedHandle) {
         setActiveDirectoryHandle(storedHandle);
         setFolderPath(storedHandle.name);
-        const perm = await storedHandle.queryPermission({ mode: 'readwrite' });
-        if (perm === 'granted') {
-          const tree = await buildTreeFromDirectoryHandle(storedHandle);
-          setFileTree(tree);
-          setExpandedFolders({ [storedHandle.name]: true });
-          appendTerminal('success', `[WORKSPACE]: Connesso a "${storedHandle.name}" (Accesso Disco Locale Attivo)`);
-          return;
+        try {
+          const perm = await storedHandle.queryPermission({ mode: 'readwrite' });
+          if (perm === 'granted') {
+            setIsHandleConnected(true);
+            setNeedsPermissionGrant(false);
+            const tree = await buildTreeFromDirectoryHandle(storedHandle);
+            setFileTree(tree);
+            setExpandedFolders({ [storedHandle.name]: true });
+            appendTerminal('success', `[WORKSPACE]: Connesso a "${storedHandle.name}" (Accesso Disco Locale Attivo)`);
+            return;
+          } else {
+            setNeedsPermissionGrant(true);
+            setIsHandleConnected(false);
+          }
+        } catch (e) {
+          setNeedsPermissionGrant(true);
         }
       }
     } catch (e) {
@@ -188,12 +200,36 @@ export default function WorkspaceAgentStudio() {
     const info = await getWorkspaceInfo();
     setActiveFolderInfo(info);
     
-    const savedActive = getActiveWorkspaceFolder();
-    const target = savedActive || info.current_project_dir || info.default_folder || '';
-    if (target) {
-      setFolderPath(target);
-      handleLoadFolder(target);
+    if (info && !info.is_serverless) {
+      const savedActive = getActiveWorkspaceFolder();
+      const target = savedActive || info.current_project_dir || info.default_folder || '';
+      if (target) {
+        setFolderPath(target);
+        handleLoadFolder(target);
+      }
     }
+  };
+
+  const handleGrantStoredPermission = async () => {
+    const handle = getActiveDirectoryHandle();
+    if (handle) {
+      try {
+        const res = await handle.requestPermission({ mode: 'readwrite' });
+        if (res === 'granted') {
+          setIsHandleConnected(true);
+          setNeedsPermissionGrant(false);
+          const tree = await buildTreeFromDirectoryHandle(handle);
+          setFileTree(tree);
+          setExpandedFolders({ [handle.name]: true });
+          addToast(`Cartella "${handle.name}" connessa con successo! (${tree.length} file)`, 'success');
+          appendTerminal('success', `[WORKSPACE]: Connesso a "${handle.name}" (Accesso Diretto Disco PC)`);
+          return;
+        }
+      } catch (e) {
+        console.warn('Grant error:', e);
+      }
+    }
+    handleOpenNativeFolderDialog();
   };
 
   const loadSessionsList = () => {
@@ -258,12 +294,15 @@ export default function WorkspaceAgentStudio() {
       try {
         const res = await pickDirectoryNative();
         if (res.success && res.handle) {
+          setActiveDirectoryHandle(res.handle);
+          setIsHandleConnected(true);
+          setNeedsPermissionGrant(false);
           setFolderPath(res.name);
           const tree = await buildTreeFromDirectoryHandle(res.handle);
           setFileTree(tree);
           setExpandedFolders({ [res.name]: true });
-          addToast(`Cartella "${res.name}" connessa con accesso diretto al disco!`, 'success');
-          appendTerminal('success', `[WORKSPACE]: Connesso a cartella locale "${res.name}" (Accesso Diretto Disco PC)`);
+          addToast(`Cartella "${res.name}" connessa! (${tree.length} elementi)`, 'success');
+          appendTerminal('success', `[WORKSPACE]: Connesso a cartella locale "${res.name}" (${tree.length} file)`);
           setIsLoadingTree(false);
           return;
         } else if (res.cancelled) {
@@ -271,7 +310,7 @@ export default function WorkspaceAgentStudio() {
           return;
         }
       } catch (err) {
-        console.warn('Browser directory picker skipped:', err);
+        console.warn('Browser directory picker error:', err);
       }
     }
 
@@ -759,16 +798,27 @@ export default function WorkspaceAgentStudio() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-extrabold text-white">Agente AI di Workspace</h1>
-                {getActiveDirectoryHandle() || folderPath ? (
+                {isHandleConnected ? (
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>DISCO LOCALE PC ATTIVO ({getActiveDirectoryHandle()?.name || folderPath.split(/[\\/]/).filter(Boolean).pop() || 'Cartella'})</span>
+                    <span>DISCO LOCALE PC ATTIVO ({getActiveDirectoryHandle()?.name || folderPath})</span>
                   </span>
+                ) : needsPermissionGrant ? (
+                  <button
+                    onClick={handleGrantStoredPermission}
+                    className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-sm animate-pulse cursor-pointer transition-all"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    <span>🔑 Clicca per connettere ({folderPath || 'Cartella'})</span>
+                  </button>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
+                  <button
+                    onClick={handleOpenNativeFolderDialog}
+                    className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                    <span>Accesso al Disco Pronto</span>
-                  </span>
+                    <span>Seleziona Cartella dal PC</span>
+                  </button>
                 )}
               </div>
               <p className="text-xs text-slate-400">Seleziona qualsiasi cartella del computer: l'Agente AI leggerà, scriverà ed eseguirà comandi lì dentro</p>
@@ -997,10 +1047,23 @@ export default function WorkspaceAgentStudio() {
                   {fileTree.length > 0 ? (
                     renderTreeNodes(fileTree)
                   ) : (
-                    <div className="p-6 text-center text-slate-500 text-xs space-y-2">
+                    <div className="p-6 text-center text-slate-500 text-xs space-y-3">
                       <Folder className="w-8 h-8 mx-auto text-slate-600" />
-                      <p>Nessun file caricato.</p>
-                      <p className="text-[11px]">Seleziona una cartella in alto per esplorare i file.</p>
+                      <p className="font-semibold text-slate-400">Nessun file visibile</p>
+                      {isHandleConnected ? (
+                        <p className="text-[11px] text-slate-500">La cartella "{getActiveDirectoryHandle()?.name || folderPath}" è vuota.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-slate-400">Seleziona la cartella dal tuo PC per iniziare a lavorare:</p>
+                          <button
+                            onClick={handleOpenNativeFolderDialog}
+                            className="w-full py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span>Sfoglia Cartella dal PC</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
