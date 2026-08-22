@@ -175,8 +175,86 @@ import { sendOpenRouterChat, streamOpenRouterChat, getOpenRouterKey } from './op
 
 let activeDirectoryHandle = null;
 
+// Lightweight IndexedDB helper for FileSystemHandle persistence across reloads
+const openHandleDB = () => {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') return resolve(null);
+    const req = indexedDB.open('AIStudioWorkspaceDB', 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('handles')) {
+        db.createObjectStore('handles');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+};
+
+export const saveDirectoryHandleToDB = async (handle) => {
+  try {
+    const db = await openHandleDB();
+    if (!db) return false;
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'activeWorkspaceDir');
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Could not save handle to IDB:', err);
+    return false;
+  }
+};
+
+export const getStoredDirectoryHandleFromDB = async () => {
+  try {
+    const db = await openHandleDB();
+    if (!db) return null;
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get('activeWorkspaceDir');
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (err) {
+    return null;
+  }
+};
+
+export const clearStoredDirectoryHandleFromDB = async () => {
+  try {
+    const db = await openHandleDB();
+    if (!db) return;
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').delete('activeWorkspaceDir');
+  } catch (e) {}
+};
+
+export const verifyAndRequestPermission = async (fileHandle, readWrite = true) => {
+  if (!fileHandle) return false;
+  const options = {};
+  if (readWrite) {
+    options.mode = 'readwrite';
+  }
+  try {
+    if ((await fileHandle.queryPermission(options)) === 'granted') {
+      return true;
+    }
+    if ((await fileHandle.requestPermission(options)) === 'granted') {
+      return true;
+    }
+  } catch (err) {
+    console.warn('Permission query/request error:', err);
+  }
+  return false;
+};
+
 export const setActiveDirectoryHandle = (handle) => {
   activeDirectoryHandle = handle;
+  if (handle) {
+    saveDirectoryHandleToDB(handle);
+  }
 };
 
 export const getActiveDirectoryHandle = () => {
@@ -314,8 +392,40 @@ export const runBrowserWorkspaceAgentTask = async ({
 }) => {
   const currentHandle = dirHandle || activeDirectoryHandle;
   const cleanFolder = folderPath || currentHandle?.name || 'Cartella Locale';
+
+  // Read current directory contents to provide immediate awareness to the AI agent
+  let existingFilesSummary = 'Nessun file presente nella cartella (cartella vuota).';
+  if (currentHandle) {
+    try {
+      await verifyAndRequestPermission(currentHandle, true);
+      const tree = await buildTreeFromDirectoryHandle(currentHandle);
+      if (tree && tree.length > 0) {
+        const fileNames = [];
+        const traverse = (items, pfx = '') => {
+          for (const item of items) {
+            const itemPath = pfx ? `${pfx}/${item.name}` : item.name;
+            if (item.is_dir) {
+              traverse(item.children || [], itemPath);
+            } else {
+              fileNames.push(`${itemPath} (${item.size || 0} bytes)`);
+            }
+          }
+        };
+        traverse(tree);
+        if (fileNames.length > 0) {
+          existingFilesSummary = `File attualmente presenti nella cartella:\n${fileNames.map((f) => `- ${f}`).join('\n')}`;
+        }
+      }
+    } catch (err) {
+      console.warn('Error pre-scanning files for agent:', err);
+    }
+  }
+
   const systemPrompt = `Sei un Agente AI di Ingegneria del Software Autonomo ("Workspace Coding Agent").
 Il tuo obiettivo è operare DIRETTAMENTE sui file della cartella di lavoro (${cleanFolder}) selezionata dall'utente sul suo computer.
+
+📁 STATO ATTUALE DEI FILE NELLA CARTELLA:
+${existingFilesSummary}
 
 TOOL A DISPOSIZIONE:
 1. [list_files()] -> Elenca i file della cartella

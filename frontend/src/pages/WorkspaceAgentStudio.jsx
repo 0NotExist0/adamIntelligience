@@ -64,7 +64,9 @@ import {
   readFileFromDirectoryHandle,
   writeFileToDirectoryHandle,
   deleteFileFromDirectoryHandle,
-  downloadFileDirectly
+  downloadFileDirectly,
+  getStoredDirectoryHandleFromDB,
+  verifyAndRequestPermission
 } from '../services/workspaceAgent';
 import { POPULAR_MODELS, getOpenRouterKey, setOpenRouterKey } from '../services/openrouter';
 import { useToast } from '../components/Toast';
@@ -103,7 +105,7 @@ export default function WorkspaceAgentStudio() {
   const [currentSessionId, setCurrentSessionId] = useState(() => `session-${Date.now()}`);
   const [sessionTitle, setSessionTitle] = useState('Task Workspace');
   const [savedSessions, setSavedSessions] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash-exp:free');
+  const [selectedModel, setSelectedModel] = useState('openrouter/free');
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -158,6 +160,25 @@ export default function WorkspaceAgentStudio() {
   }, [terminalHistory]);
 
   const initWorkspace = async () => {
+    // 1. Check if we have a stored directory handle in browser IndexedDB
+    try {
+      const storedHandle = await getStoredDirectoryHandleFromDB();
+      if (storedHandle) {
+        setActiveDirectoryHandle(storedHandle);
+        setFolderPath(storedHandle.name);
+        const perm = await storedHandle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          const tree = await buildTreeFromDirectoryHandle(storedHandle);
+          setFileTree(tree);
+          setExpandedFolders({ [storedHandle.name]: true });
+          appendTerminal('success', `[WORKSPACE]: Connesso a "${storedHandle.name}" (Accesso Disco Locale Attivo)`);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('IDB handle init:', e);
+    }
+
     const info = await getWorkspaceInfo();
     setActiveFolderInfo(info);
     
@@ -197,9 +218,19 @@ export default function WorkspaceAgentStudio() {
 
   const handleConfirmPathClick = async () => {
     const isWeb = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    if (isWeb && !getActiveDirectoryHandle()) {
-      addToast('Su Vercel, seleziona la cartella dal selettore per autorizzare la scrittura reale sul disco!', 'info');
+    const activeHandle = getActiveDirectoryHandle();
+    if (isWeb && !activeHandle) {
+      addToast('Seleziona la cartella dal popup per autorizzare la scrittura reale sul tuo PC!', 'info');
       await handleOpenNativeFolderDialog();
+    } else if (activeHandle) {
+      const hasPerm = await verifyAndRequestPermission(activeHandle, true);
+      if (hasPerm) {
+        const tree = await buildTreeFromDirectoryHandle(activeHandle);
+        setFileTree(tree);
+        addToast(`Cartella "${activeHandle.name}" pronta con permessi attivi!`, 'success');
+      } else {
+        await handleOpenNativeFolderDialog();
+      }
     } else {
       await handleLoadFolder();
     }
