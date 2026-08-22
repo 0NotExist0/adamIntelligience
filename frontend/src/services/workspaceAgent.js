@@ -171,7 +171,7 @@ export const runWorkspaceCommand = async (folderPath, command, timeoutSeconds = 
   }
 };
 
-import { sendOpenRouterChat, getOpenRouterKey } from './openrouter';
+import { sendOpenRouterChat, streamOpenRouterChat, getOpenRouterKey } from './openrouter';
 
 let activeDirectoryHandle = null;
 
@@ -309,7 +309,8 @@ export const runBrowserWorkspaceAgentTask = async ({
   messages = [],
   model = 'openrouter/free',
   maxIterations = 5,
-  apiKey = null
+  apiKey = null,
+  onStreamChunk = null
 }) => {
   const currentHandle = dirHandle || activeDirectoryHandle;
   const cleanFolder = folderPath || currentHandle?.name || 'Cartella Locale';
@@ -343,15 +344,35 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
   let iteration = 0;
   let finalAnswer = '';
   let lastResponse = '';
+  let finalReasoning = '';
 
   while (iteration < maxIterations) {
     iteration += 1;
-    const llmRes = await sendOpenRouterChat({
+    let streamContent = '';
+    let streamReasoning = '';
+
+    const llmRes = await streamOpenRouterChat({
       model,
       messages: conversation,
       temperature: 0.1,
       max_tokens: 4096,
-      apiKey
+      apiKey,
+      onChunk: (chunk) => {
+        streamContent = chunk.content || '';
+        streamReasoning = chunk.reasoning || '';
+        if (chunk.reasoning) {
+          finalReasoning = chunk.reasoning;
+        }
+        if (onStreamChunk) {
+          onStreamChunk({
+            content: streamContent,
+            reasoning: streamReasoning || finalReasoning,
+            rawContent: chunk.rawContent,
+            iteration,
+            isThinking: !!streamReasoning && !streamContent
+          });
+        }
+      }
     });
 
     if (!llmRes.success) {
@@ -359,11 +380,16 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
         success: false,
         error: llmRes.error,
         content: `⚠️ Errore AI: ${llmRes.error}`,
+        reasoning: finalReasoning,
         steps: stepsExecuted
       };
     }
 
     lastResponse = llmRes.content || '';
+    if (llmRes.reasoning) {
+      finalReasoning = llmRes.reasoning;
+    }
+
     const toolRegex = /(?:<\|tool_call_start\|>)?\s*\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\(([\s\S]*?)\)\]\s*(?:<\|tool_call_end\|>)?/g;
     const toolCalls = [];
     let match;
@@ -461,6 +487,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
   return {
     success: true,
     content: cleaned,
+    reasoning: finalReasoning,
     folder: cleanFolder,
     steps: stepsExecuted,
     steps_count: stepsExecuted.length,
@@ -480,7 +507,8 @@ export const runWorkspaceAgentTask = async ({
   model = 'openrouter/free',
   maxIterations = 5,
   dirHandle = null,
-  apiKey = null
+  apiKey = null,
+  onStreamChunk = null
 }) => {
   const currentHandle = dirHandle || activeDirectoryHandle;
   const activeKey = (apiKey || getOpenRouterKey() || '').trim();
@@ -493,56 +521,17 @@ export const runWorkspaceAgentTask = async ({
     };
   }
   
-  // If we have a browser directory handle (Vercel Mode), run client-side agent
-  if (currentHandle) {
-    return runBrowserWorkspaceAgentTask({
-      dirHandle: currentHandle,
-      folderPath,
-      taskPrompt,
-      messages,
-      model,
-      maxIterations,
-      apiKey: activeKey
-    });
-  }
-
-  // Otherwise try backend REST API
-  try {
-    const res = await axios.post('/api/workspace/agent-task', {
-      folder_path: folderPath,
-      task_prompt: taskPrompt,
-      messages: messages,
-      model: model,
-      max_iterations: maxIterations,
-      api_key: activeKey
-    }, {
-      headers: { Authorization: `Bearer ${activeKey}` }
-    });
-    if (res.data && res.data.success) {
-      return res.data;
-    }
-    // If backend returned error, fallback to browser runner
-    return runBrowserWorkspaceAgentTask({
-      dirHandle: currentHandle,
-      folderPath,
-      taskPrompt,
-      messages,
-      model,
-      maxIterations,
-      apiKey: activeKey
-    });
-  } catch (err) {
-    // If backend 404/500 on Vercel, fallback to client-side runner
-    return runBrowserWorkspaceAgentTask({
-      dirHandle: currentHandle,
-      folderPath,
-      taskPrompt,
-      messages,
-      model,
-      maxIterations,
-      apiKey: activeKey
-    });
-  }
+  // Run client-side agent with real-time token and reasoning streaming
+  return runBrowserWorkspaceAgentTask({
+    dirHandle: currentHandle,
+    folderPath,
+    taskPrompt,
+    messages,
+    model,
+    maxIterations,
+    apiKey: activeKey,
+    onStreamChunk
+  });
 };
 
 /**

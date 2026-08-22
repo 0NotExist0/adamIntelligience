@@ -36,7 +36,9 @@ import {
   HardDrive,
   FolderUp,
   Key,
-  HelpCircle
+  HelpCircle,
+  Brain,
+  ChevronUp
 } from 'lucide-react';
 import { 
   getWorkspaceInfo, 
@@ -113,6 +115,14 @@ export default function WorkspaceAgentStudio() {
   const [loading, setLoading] = useState(false);
   const [currentStepLabel, setCurrentStepLabel] = useState('');
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [collapsedThoughts, setCollapsedThoughts] = useState({});
+
+  const toggleThoughtCollapse = (idx) => {
+    setCollapsedThoughts((prev) => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
+  };
 
   // OpenRouter API Key state
   const [userApiKey, setUserApiKey] = useState(() => getOpenRouterKey());
@@ -390,14 +400,22 @@ export default function WorkspaceAgentStudio() {
     }
 
     const userMessage = { role: 'user', content: taskText.trim() };
-    const newMessages = [...messages, userMessage];
+    const streamingAssistantPlaceholder = {
+      role: 'assistant',
+      content: '',
+      reasoning: '',
+      isStreaming: true,
+      agentTrace: null
+    };
+
+    const newMessages = [...messages, userMessage, streamingAssistantPlaceholder];
     setMessages(newMessages);
     setInputPrompt('');
     setLoading(true);
-    setCurrentStepLabel('Analisi cartella e pianificazione task...');
+    setCurrentStepLabel('Analisi cartella e streaming pensieri...');
 
     // Auto-generate title if default
-    if (sessionTitle === 'Task Workspace' && newMessages.length === 2) {
+    if (sessionTitle === 'Task Workspace' && newMessages.length === 3) {
       setSessionTitle(taskText.slice(0, 32) + (taskText.length > 32 ? '...' : ''));
     }
 
@@ -407,9 +425,29 @@ export default function WorkspaceAgentStudio() {
       const agentRes = await runWorkspaceAgentTask({
         folderPath,
         taskPrompt: taskText.trim(),
-        messages: newMessages.filter((m, idx) => !(idx === 0 && m.role === 'assistant')),
+        messages: newMessages.filter((m, idx) => !(idx === 0 && m.role === 'assistant') && !m.isStreaming),
         model: selectedModel,
-        maxIterations: 6
+        maxIterations: 6,
+        onStreamChunk: ({ content, reasoning, iteration, isThinking }) => {
+          if (isThinking) {
+            setCurrentStepLabel(`Ragionamento e analisi in corso (Iterazione ${iteration})...`);
+          } else if (content) {
+            setCurrentStepLabel(`Generazione ed esecuzione step...`);
+          }
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: content || updated[lastIdx].content || '',
+                reasoning: reasoning || updated[lastIdx].reasoning || '',
+                isStreaming: true
+              };
+            }
+            return updated;
+          });
+        }
       });
 
       if (agentRes.success) {
@@ -435,6 +473,8 @@ export default function WorkspaceAgentStudio() {
         const assistantMessage = {
           role: 'assistant',
           content: agentRes.content,
+          reasoning: agentRes.reasoning || '',
+          isStreaming: false,
           agentTrace: {
             steps: agentRes.steps || [],
             stepsCount: agentRes.steps_count || 0,
@@ -445,8 +485,8 @@ export default function WorkspaceAgentStudio() {
           }
         };
 
-        const updatedMessages = [...newMessages, assistantMessage];
-        setMessages(updatedMessages);
+        const finalMessages = [...newMessages.slice(0, -1), assistantMessage];
+        setMessages(finalMessages);
 
         // Auto-save session
         saveChatSession({
@@ -454,21 +494,46 @@ export default function WorkspaceAgentStudio() {
           title: sessionTitle || taskText.slice(0, 30),
           folderPath,
           model: selectedModel,
-          messages: updatedMessages
+          messages: finalMessages
         });
         loadSessionsList();
       } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `⚠️ Errore durante l'esecuzione del task: ${agentRes.error}` }
-        ]);
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].isStreaming) {
+            updated[lastIdx] = {
+              role: 'assistant',
+              content: `⚠️ Errore durante l'esecuzione del task: ${agentRes.error}`,
+              reasoning: agentRes.reasoning || '',
+              isStreaming: false
+            };
+            return updated;
+          }
+          return [
+            ...prev,
+            { role: 'assistant', content: `⚠️ Errore durante l'esecuzione del task: ${agentRes.error}` }
+          ];
+        });
         appendTerminal('error', `[ERRORE AGENTE]: ${agentRes.error}`);
       }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `❌ Errore imprevisto: ${err.message}` }
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (lastIdx >= 0 && updated[lastIdx].isStreaming) {
+          updated[lastIdx] = {
+            role: 'assistant',
+            content: `❌ Errore imprevisto: ${err.message}`,
+            isStreaming: false
+          };
+          return updated;
+        }
+        return [
+          ...prev,
+          { role: 'assistant', content: `❌ Errore imprevisto: ${err.message}` }
+        ];
+      });
       appendTerminal('error', `[ECCEZIONE]: ${err.message}`);
     } finally {
       setLoading(false);
@@ -1007,8 +1072,53 @@ export default function WorkspaceAgentStudio() {
                       </div>
                     )}
 
+                    {/* Live Streaming Reasoning / Thoughts Accordion */}
+                    {!isUser && msg.reasoning && (
+                      <div className="mb-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 overflow-hidden shadow-inner animate-in fade-in duration-200">
+                        <button
+                          type="button"
+                          onClick={() => toggleThoughtCollapse(index)}
+                          className="w-full px-3 py-2 bg-purple-900/20 hover:bg-purple-900/40 flex items-center justify-between text-[11px] font-bold text-purple-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Brain className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                            <span>Processo di Pensiero & Ragionamento</span>
+                            {msg.isStreaming && !msg.content && (
+                              <span className="text-[9px] bg-purple-500/20 text-purple-200 px-2 py-0.5 rounded-full border border-purple-500/30 animate-pulse">
+                                Streaming Pensieri...
+                              </span>
+                            )}
+                          </div>
+                          {collapsedThoughts[index] ? (
+                            <ChevronDown className="w-3.5 h-3.5 text-purple-400" />
+                          ) : (
+                            <ChevronUp className="w-3.5 h-3.5 text-purple-400" />
+                          )}
+                        </button>
+
+                        {!collapsedThoughts[index] && (
+                          <div className="p-3 font-mono text-[11px] text-purple-200/90 whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto border-t border-purple-500/20 bg-slate-950/40">
+                            {msg.reasoning}
+                            {msg.isStreaming && !msg.content && (
+                              <span className="inline-block w-1.5 h-3 bg-purple-400 ml-1 animate-pulse" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Main text content */}
-                    <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                    <div className="whitespace-pre-wrap font-sans">
+                      {msg.content || (msg.isStreaming && !msg.reasoning ? (
+                        <span className="text-slate-400 italic flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                          Analisi ed elaborazione risposta...
+                        </span>
+                      ) : '')}
+                      {msg.isStreaming && msg.content && (
+                        <span className="inline-block w-2 h-3.5 bg-purple-400 ml-1 animate-pulse align-middle" />
+                      )}
+                    </div>
 
                     {/* Agent Trace Badge & Steps Inspector */}
                     {!isUser && msg.agentTrace?.steps?.length > 0 && (
