@@ -504,23 +504,86 @@ class WorkspaceAgentRunner:
         }
 
 def open_native_folder_dialog(initial_dir: Optional[str] = None) -> Optional[str]:
-    """Opens a native OS folder picker dialog (Windows Explorer / macOS / Linux) and returns chosen directory."""
+    """Opens a native OS folder picker dialog in an isolated process so it appears on top and doesn't block server."""
+    start_dir = os.path.abspath(initial_dir) if (initial_dir and os.path.exists(initial_dir)) else os.path.expanduser("~")
+    
+    # On Windows: try PowerShell FolderBrowserDialog with top-most form in STA thread
+    if sys.platform.startswith("win"):
+        start_esc = start_dir.replace("'", "''")
+        ps_script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Seleziona la cartella di lavoro su cui far operare l''Agente AI'
+$dialog.SelectedPath = '{start_esc}'
+$dialog.ShowNewFolderButton = $true
+
+$form = New-Object System.Windows.Forms.Form
+$form.TopMost = $true
+$form.Opacity = 0
+$form.ShowInTaskbar = $false
+$form.StartPosition = 'CenterScreen'
+$form.Show()
+$form.BringToFront()
+$form.Activate()
+
+$result = $dialog.ShowDialog($form)
+$form.Dispose()
+
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    Write-Output $dialog.SelectedPath
+}}
+"""
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180
+            )
+            out_path = res.stdout.strip()
+            if out_path and os.path.exists(out_path):
+                return os.path.abspath(out_path)
+        except Exception as e:
+            print(f"PowerShell dialog error: {e}")
+
+    # Fallback to isolated Python Tkinter subprocess
+    tk_code = f"""
+import tkinter as tk
+from tkinter import filedialog
+import os, sys
+
+try:
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+    root.focus_force()
+    res = filedialog.askdirectory(initialdir={repr(start_dir)}, title="Seleziona la cartella di lavoro")
+    root.destroy()
+    if res:
+        print(os.path.abspath(res))
+except Exception as e:
+    sys.exit(1)
+"""
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        start_dir = initial_dir if (initial_dir and os.path.exists(initial_dir)) else os.path.expanduser("~")
-        chosen = filedialog.askdirectory(
-            initialdir=start_dir,
-            title="Seleziona la cartella di lavoro su cui far operare l'Agente AI"
+        res = subprocess.run(
+            [sys.executable, "-c", tk_code],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180
         )
-        root.destroy()
-        return os.path.abspath(chosen) if chosen else None
+        out_path = res.stdout.strip()
+        if out_path and os.path.exists(out_path):
+            return os.path.abspath(out_path)
     except Exception as e:
-        print(f"Error opening native dialog: {e}")
-        return None
+        print(f"Tkinter fallback dialog error: {e}")
+        
+    return None
 
 def list_system_drives_and_subdirs(target_path: Optional[str] = None) -> Dict[str, Any]:
     """Lists drives and subdirectories to browse local PC filesystem easily in UI."""

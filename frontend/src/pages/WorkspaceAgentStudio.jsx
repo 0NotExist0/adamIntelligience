@@ -172,14 +172,12 @@ export default function WorkspaceAgentStudio() {
       if (!res.cancelled && res.success && res.folder_path) {
         setFolderPath(res.folder_path);
         await handleLoadFolder(res.folder_path);
-      } else if (res.cancelled) {
-        addToast('Selezione cartella annullata', 'info');
       } else {
-        // Fallback to browser picker
-        handleBrowseNative();
+        // If native dialog was cancelled or skipped, open visual directory browser directly
+        handleOpenDirBrowser();
       }
     } catch (err) {
-      handleBrowseNative();
+      handleOpenDirBrowser();
     } finally {
       setIsLoadingTree(false);
     }
@@ -1102,6 +1100,24 @@ export default function WorkspaceAgentStudio() {
                 className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search / Direct Path Bar inside modal */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={browserDirsData?.current || ''}
+                onChange={(e) => setBrowserDirsData((prev) => ({ ...prev, current: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && handleOpenDirBrowser(browserDirsData?.current)}
+                placeholder="Incolla o modifica il percorso (es. C:\Users\...)..."
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-mono text-purple-200 focus:outline-none focus:border-purple-500"
+              />
+              <button
+                onClick={() => handleOpenDirBrowser(browserDirsData?.current)}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold shrink-0 border border-slate-700"
+              >
+                Vai
               </button>
             </div>
 

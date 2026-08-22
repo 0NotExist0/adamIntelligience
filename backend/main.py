@@ -617,8 +617,9 @@ async def get_workspace_info():
 
 @app.post("/api/workspace/browse-native")
 async def browse_native_folder(req: WorkspaceBrowseNativeRequest):
-    """Opens native Windows folder selection window on the user PC and returns chosen path."""
-    chosen = open_native_folder_dialog(initial_dir=req.initial_dir)
+    """Opens native Windows folder selection window on the user PC in threadpool and returns chosen path."""
+    loop = asyncio.get_event_loop()
+    chosen = await loop.run_in_executor(None, open_native_folder_dialog, req.initial_dir)
     if not chosen:
         return {"cancelled": True, "folder_path": None}
     
