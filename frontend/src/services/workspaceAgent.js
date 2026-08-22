@@ -155,9 +155,20 @@ export const deleteWorkspaceFile = async (folderPath, relativePath) => {
 };
 
 /**
- * Executes a terminal command in the workspace folder
+ * Executes a terminal command in the workspace folder via local PowerShell or API
  */
 export const runWorkspaceCommand = async (folderPath, command, timeoutSeconds = 30) => {
+  // 1. Try local Python agent bridge on 127.0.0.1:8000 (direct native PowerShell on Windows)
+  try {
+    const res = await axios.post('http://127.0.0.1:8000/api/workspace/run-command', {
+      folder_path: folderPath,
+      command: command,
+      timeout_seconds: timeoutSeconds
+    }, { timeout: (timeoutSeconds + 5) * 1000 });
+    return res.data;
+  } catch (err) {}
+
+  // 2. Fallback to same-origin /api/workspace/run-command
   try {
     const res = await axios.post('/api/workspace/run-command', {
       folder_path: folderPath,
@@ -384,7 +395,7 @@ export const parseModelToolCalls = (text) => {
   const calls = [];
   
   // 1. Bracket format with optional prefixes: [tool call: list_files(...)], [call: list_files(...)], [tool: list_files(...)], [list_files(...)]
-  const bracketRegex = /(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?/gi;
+  const bracketRegex = /(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?/gi;
   let match;
   while ((match = bracketRegex.exec(text)) !== null) {
     calls.push({
@@ -399,7 +410,7 @@ export const parseModelToolCalls = (text) => {
     let cbMatch;
     while ((cbMatch = codeBlockRegex.exec(text)) !== null) {
       const inner = cbMatch[1].trim();
-      const fnMatch = /(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])/i.exec(inner);
+      const fnMatch = /(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])/i.exec(inner);
       if (fnMatch) {
         calls.push({
           name: fnMatch[1].toLowerCase(),
@@ -426,7 +437,7 @@ export const parseModelToolCalls = (text) => {
 
   // 3. Unbracketed ReAct format: "tool call: list_files()" or "Action: list_files"
   if (!calls.length) {
-    const unbracketedRegex = /(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|ask_user)(?:\s*\(([\s\S]*?)\)|\s*:\s*([\s\S]*?))?(?=\n\n|\n[A-Z]|$)/gi;
+    const unbracketedRegex = /(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)(?:\s*\(([\s\S]*?)\)|\s*:\s*([\s\S]*?))?(?=\n\n|\n[A-Z]|$)/gi;
     let ubMatch;
     while ((ubMatch = unbracketedRegex.exec(text)) !== null) {
       calls.push({
@@ -443,9 +454,9 @@ export const cleanModelOutput = (text) => {
   if (!text) return '';
   let cleaned = text;
   cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '');
-  cleaned = cleaned.replace(/\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\([\s\S]*?\)|\[[\s\S]*?\])?\s*\]/gi, '');
+  cleaned = cleaned.replace(/\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\([\s\S]*?\)|\[[\s\S]*?\])?\s*\]/gi, '');
   cleaned = cleaned.replace(/```(?:tool|tool_call)\s*[\r\n]+[\s\S]*?```/gi, '');
-  cleaned = cleaned.replace(/(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|ask_user)[\s\S]*?(?=\n\n|$)/gi, '');
+  cleaned = cleaned.replace(/(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)[\s\S]*?(?=\n\n|$)/gi, '');
   return cleaned.trim();
 };
 
@@ -685,17 +696,47 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
         const { path, content } = extractWriteArgs(call.rawArgs);
         generatedFiles.push({ path, content });
 
-        if (currentHandle) {
+        let written = false;
+
+        // 1. Try local Python agent bridge on 127.0.0.1:8000 (direct native write to Windows disk in C:\...)
+        try {
+          const bridgeRes = await axios.post('http://127.0.0.1:8000/api/workspace/save-file', {
+            folder_path: folderPath || cleanFolder,
+            relative_path: path,
+            content: content
+          }, { timeout: 2500 });
+          if (bridgeRes.data && bridgeRes.data.success) {
+            output = `File '${path}' salvato direttamente sul disco in '${folderPath || cleanFolder}'!`;
+            written = true;
+          }
+        } catch (e) {}
+
+        // 2. Try browser DirectoryHandle (Chrome direct disk write)
+        if (!written && currentHandle) {
           const res = await writeFileToDirectoryHandle(currentHandle, path, content);
           if (res.success) {
-            output = `File '${path}' salvato direttamente sul tuo disco locale!`;
-          } else {
-            downloadFileDirectly(path, content);
-            output = `File '${path}' scaricato sul computer (${res.error})`;
+            output = `File '${path}' salvato direttamente nella cartella '${currentHandle.name}' sul tuo disco PC!`;
+            written = true;
           }
-        } else {
+        }
+
+        // 3. Fallback to download if no direct write permission
+        if (!written) {
           downloadFileDirectly(path, content);
-          output = `File '${path}' salvato sul tuo computer! (Per scriverlo direttamente nella cartella Prova, selezionala con "Sfoglia Cartella dal PC").`;
+          output = `File '${path}' scaricato sul computer. (💡 Per salvarlo direttamente dentro '${cleanFolder}', seleziona la cartella dal pulsante "Sfoglia Cartella dal PC" o avvia 'python backend/main.py').`;
+        }
+      } else if (call.name === 'run_command') {
+        const cmdMatch = /command\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(call.rawArgs);
+        const cmd = cmdMatch ? (cmdMatch[1] || cmdMatch[2] || cmdMatch[3] || cmdMatch[4] || '') : call.rawArgs.replace(/^["']|["']$/g, '');
+        try {
+          const cmdRes = await runWorkspaceCommand(folderPath || cleanFolder, cmd, 30);
+          if (cmdRes.success) {
+            output = `[PowerShell STDOUT]:\n${cmdRes.stdout || 'Comando completato con successo.'}`;
+          } else {
+            output = `[PowerShell ERRORE]:\n${cmdRes.stderr || cmdRes.error || 'Errore esecuzione comando.'}`;
+          }
+        } catch (e) {
+          output = `Errore comando: ${e.message}`;
         }
       } else if (call.name === 'read_file') {
         const path = extractPathArg(call.rawArgs);

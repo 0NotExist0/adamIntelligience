@@ -244,22 +244,35 @@ def search_code_in_workspace(folder_path: str, query: str, max_matches: int = 50
     return matches
 
 def execute_workspace_command(folder_path: str, command: str, timeout_seconds: int = 30) -> Dict[str, Any]:
-    """Runs a shell command inside the workspace directory."""
+    """Runs a shell/PowerShell command inside the workspace directory."""
     if not os.path.exists(folder_path):
         return {"success": False, "error": f"Cartella non trovata: {folder_path}"}
     
     try:
-        proc = subprocess.run(
-            command,
-            shell=True,
-            cwd=folder_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout_seconds,
-            encoding="utf-8",
-            errors="replace"
-        )
+        if sys.platform == "win32":
+            cmd_to_run = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+            proc = subprocess.run(
+                cmd_to_run,
+                cwd=folder_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_seconds,
+                encoding="utf-8",
+                errors="replace"
+            )
+        else:
+            proc = subprocess.run(
+                command,
+                shell=True,
+                cwd=folder_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_seconds,
+                encoding="utf-8",
+                errors="replace"
+            )
         return {
             "success": proc.returncode == 0,
             "returncode": proc.returncode,
