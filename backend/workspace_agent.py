@@ -431,9 +431,12 @@ class WorkspaceAgentRunner:
         max_iterations: int = 5
     ) -> Dict[str, Any]:
         """Runs the autonomous workspace agent multi-step loop."""
-        clean_folder = os.path.abspath(folder_path)
+        clean_folder = os.path.abspath(folder_path.strip().strip('"').strip("'"))
         if not os.path.exists(clean_folder):
-            return {"success": False, "error": f"La cartella di lavoro specificata non esiste: {clean_folder}"}
+            try:
+                os.makedirs(clean_folder, exist_ok=True)
+            except Exception as e:
+                return {"success": False, "error": f"La cartella specificata non esiste e non può essere creata: {e}"}
         
         system_prompt = WORKSPACE_AGENT_SYSTEM_PROMPT.format(target_folder=clean_folder)
         conversation = [{"role": "system", "content": system_prompt}]

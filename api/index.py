@@ -352,6 +352,20 @@ class WorkspaceSaveSessionRequest(BaseModel):
     model: Optional[str] = ""
     timestamp: Optional[int] = None
 
+class WorkspaceDeleteFileRequest(BaseModel):
+    folder_path: str
+    relative_path: str
+
+class WorkspaceAgentTaskRequest(BaseModel):
+    folder_path: str
+    task_prompt: str
+    messages: Optional[List[Dict[str, Any]]] = None
+    model: str = "openrouter/free"
+    max_iterations: Optional[int] = 5
+
+class WorkspaceBrowseNativeRequest(BaseModel):
+    initial_dir: Optional[str] = None
+
 @app.get("/api/workspace/info")
 async def serverless_workspace_info():
     return {
@@ -362,9 +376,73 @@ async def serverless_workspace_info():
         "platform": "serverless"
     }
 
+@app.post("/api/workspace/browse-native")
+async def serverless_browse_native(req: WorkspaceBrowseNativeRequest):
+    return {"cancelled": True, "folder_path": None}
+
+@app.get("/api/workspace/browse-dirs")
+async def serverless_browse_dirs(target_path: Optional[str] = None):
+    return {
+        "connected": True,
+        "current": target_path or "/workspace",
+        "parent": None,
+        "drives": ["/"],
+        "quick_locations": [{"label": "Workspace", "path": "/workspace"}],
+        "subdirectories": []
+    }
+
 @app.post("/api/workspace/set-folder")
 async def serverless_set_folder(req: WorkspaceSetFolderRequest):
     return {"success": True, "folder_path": req.folder_path, "folder_name": req.folder_path.split("/")[-1] or req.folder_path}
+
+@app.get("/api/workspace/tree")
+async def serverless_get_tree(folder_path: str = ""):
+    return {"folder_path": folder_path, "tree": []}
+
+@app.get("/api/workspace/file-content")
+async def serverless_file_content(folder_path: str, relative_path: str):
+    return {"success": True, "path": relative_path, "content": "// File in ambiente serverless"}
+
+@app.post("/api/workspace/save-file")
+async def serverless_save_file(req: WorkspaceSaveFileRequest):
+    return {"success": True, "path": req.relative_path, "message": "File salvato"}
+
+@app.post("/api/workspace/delete-file")
+async def serverless_delete_file(req: WorkspaceDeleteFileRequest):
+    return {"success": True, "path": req.relative_path, "message": "File eliminato"}
+
+@app.post("/api/workspace/run-command")
+async def serverless_run_command(req: WorkspaceRunCommandRequest):
+    return {"success": True, "stdout": f"Comando '{req.command}' simulato in ambiente cloud", "stderr": "", "returncode": 0}
+
+@app.post("/api/workspace/agent-task")
+async def serverless_agent_task(req: WorkspaceAgentTaskRequest):
+    # Genera risposta con OpenRouter LLM
+    or_mgr = OpenRouterManager()
+    sys_prompt = f"Sei un Agente AI di Workspace operativo sulla cartella: {req.folder_path}."
+    conv = [{"role": "system", "content": sys_prompt}]
+    if req.messages:
+        conv.extend([m for m in req.messages if m.get("role") != "system"])
+    if not conv or conv[-1].get("content") != req.task_prompt:
+        conv.append({"role": "user", "content": req.task_prompt})
+    
+    llm_res = await or_mgr.chat(
+        messages=conv,
+        model=req.model or "openrouter/free",
+        temperature=0.2,
+        max_tokens=4096
+    )
+    
+    return {
+        "success": llm_res.get("success", False),
+        "content": llm_res.get("content", ""),
+        "error": llm_res.get("error"),
+        "folder": req.folder_path,
+        "steps": [],
+        "steps_count": 0,
+        "model": req.model,
+        "iterations": 1
+    }
 
 @app.get("/api/workspace/sessions")
 async def serverless_list_sessions():
@@ -387,4 +465,10 @@ async def serverless_save_session(req: WorkspaceSaveSessionRequest):
     else:
         _WORKSPACE_SESSIONS.insert(0, sess)
     return {"success": True, "session": sess}
+
+@app.delete("/api/workspace/sessions/{session_id}")
+async def serverless_delete_session(session_id: str):
+    global _WORKSPACE_SESSIONS
+    _WORKSPACE_SESSIONS = [s for s in _WORKSPACE_SESSIONS if s.get("id") != session_id]
+    return {"success": True, "deleted_id": session_id}
 

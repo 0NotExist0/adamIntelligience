@@ -640,9 +640,15 @@ async def browse_workspace_directories(target_path: Optional[str] = None):
 
 @app.post("/api/workspace/set-folder")
 async def set_workspace_folder(req: WorkspaceSetFolderRequest):
-    folder = os.path.abspath(req.folder_path.strip())
+    raw = req.folder_path.strip().strip('"').strip("'")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Percorso cartella vuoto")
+    folder = os.path.abspath(raw)
     if not os.path.exists(folder):
-        raise HTTPException(status_code=404, detail=f"La cartella specificata non esiste: {folder}")
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Impossibile creare la cartella: {e}")
     if not os.path.isdir(folder):
         raise HTTPException(status_code=400, detail=f"Il percorso specificato non è una cartella: {folder}")
     
@@ -650,21 +656,25 @@ async def set_workspace_folder(req: WorkspaceSetFolderRequest):
     return {
         "success": True,
         "folder_path": folder,
-        "folder_name": os.path.basename(folder),
+        "folder_name": os.path.basename(folder) or folder,
         "total_files_sample": len(files)
     }
 
 @app.get("/api/workspace/tree")
 async def get_workspace_tree(folder_path: str = ""):
-    folder = os.path.abspath(folder_path.strip() or os.path.join(os.path.dirname(__file__), ".."))
+    raw = folder_path.strip().strip('"').strip("'") or os.path.join(os.path.dirname(__file__), "..")
+    folder = os.path.abspath(raw)
     if not os.path.exists(folder):
-        raise HTTPException(status_code=404, detail="Cartella non trovata")
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except Exception:
+            return {"folder_path": folder, "tree": []}
     tree = get_directory_tree(folder, max_depth=5)
     return {"folder_path": folder, "tree": tree}
 
 @app.get("/api/workspace/file-content")
 async def get_workspace_file_content(folder_path: str, relative_path: str):
-    folder = os.path.abspath(folder_path.strip())
+    folder = os.path.abspath(folder_path.strip().strip('"').strip("'"))
     res = read_file_content(folder, relative_path)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))
@@ -672,7 +682,7 @@ async def get_workspace_file_content(folder_path: str, relative_path: str):
 
 @app.post("/api/workspace/save-file")
 async def save_workspace_file(req: WorkspaceSaveFileRequest):
-    folder = os.path.abspath(req.folder_path.strip())
+    folder = os.path.abspath(req.folder_path.strip().strip('"').strip("'"))
     res = write_file_content(folder, req.relative_path, req.content)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))
@@ -680,7 +690,7 @@ async def save_workspace_file(req: WorkspaceSaveFileRequest):
 
 @app.post("/api/workspace/delete-file")
 async def delete_workspace_file_endpoint(req: WorkspaceDeleteFileRequest):
-    folder = os.path.abspath(req.folder_path.strip())
+    folder = os.path.abspath(req.folder_path.strip().strip('"').strip("'"))
     res = delete_workspace_file(folder, req.relative_path)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))
@@ -688,15 +698,23 @@ async def delete_workspace_file_endpoint(req: WorkspaceDeleteFileRequest):
 
 @app.post("/api/workspace/run-command")
 async def run_workspace_command_endpoint(req: WorkspaceRunCommandRequest):
-    folder = os.path.abspath(req.folder_path.strip())
+    folder = os.path.abspath(req.folder_path.strip().strip('"').strip("'"))
     res = execute_workspace_command(folder, req.command, timeout_seconds=req.timeout_seconds or 30)
     return res
 
 @app.post("/api/workspace/agent-task")
 async def run_workspace_agent_task(req: WorkspaceAgentTaskRequest):
+    raw = req.folder_path.strip().strip('"').strip("'")
+    folder = os.path.abspath(raw)
+    if not os.path.exists(folder):
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Cartella non trovata e impossibile crearla: {e}")
+    
     runner = WorkspaceAgentRunner()
     res = await runner.run_task(
-        folder_path=req.folder_path,
+        folder_path=folder,
         task_prompt=req.task_prompt,
         messages=req.messages,
         model=req.model or "openrouter/free",
