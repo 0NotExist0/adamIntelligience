@@ -598,35 +598,48 @@ def list_system_drives_and_subdirs(target_path: Optional[str] = None) -> Dict[st
         drives.append("/")
 
     user_home = os.path.expanduser("~")
-    desktop = os.path.join(user_home, "Desktop")
-    documents = os.path.join(user_home, "Documents")
+    onedrive = os.path.join(user_home, "OneDrive")
+    
+    # Check OneDrive Desktop / Documents vs standard
+    desktop = os.path.join(onedrive, "Desktop") if os.path.exists(os.path.join(onedrive, "Desktop")) else os.path.join(user_home, "Desktop")
+    documents = os.path.join(onedrive, "Documents") if os.path.exists(os.path.join(onedrive, "Documents")) else os.path.join(user_home, "Documents")
     downloads = os.path.join(user_home, "Downloads")
     
-    current = os.path.abspath(target_path) if (target_path and os.path.exists(target_path)) else user_home
+    clean_target = target_path.strip().strip('"').strip("'") if target_path else ""
+    current = os.path.abspath(clean_target) if (clean_target and os.path.exists(clean_target)) else (desktop if os.path.exists(desktop) else user_home)
     parent = os.path.dirname(current) if os.path.dirname(current) != current else None
 
     subdirs = []
     try:
-        for entry in os.scandir(current):
-            if entry.is_dir() and not entry.name.startswith(('.', '$')):
-                subdirs.append({
-                    "name": entry.name,
-                    "path": os.path.abspath(entry.path)
-                })
+        if os.path.exists(current) and os.path.isdir(current):
+            for entry in os.scandir(current):
+                try:
+                    if entry.is_dir(follow_symlinks=False) and not entry.name.startswith(('$Recycle.Bin', 'System Volume Information')):
+                        subdirs.append({
+                            "name": entry.name,
+                            "path": os.path.abspath(entry.path)
+                        })
+                except Exception:
+                    pass
         subdirs.sort(key=lambda s: s["name"].lower())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error scanning directory {current}: {e}")
+
+    quick_locs = [
+        {"label": "Desktop", "path": desktop if os.path.exists(desktop) else user_home},
+        {"label": "Documenti", "path": documents if os.path.exists(documents) else user_home},
+        {"label": "Download", "path": downloads if os.path.exists(downloads) else user_home},
+        {"label": "Home Utente", "path": user_home},
+    ]
+    if os.path.exists(onedrive):
+        quick_locs.insert(1, {"label": "OneDrive", "path": onedrive})
 
     return {
+        "connected": True,
         "current": current,
         "parent": parent,
         "drives": drives,
-        "quick_locations": [
-            {"label": "Desktop", "path": desktop if os.path.exists(desktop) else user_home},
-            {"label": "Documenti", "path": documents if os.path.exists(documents) else user_home},
-            {"label": "Download", "path": downloads if os.path.exists(downloads) else user_home},
-            {"label": "Home Utente", "path": user_home},
-        ],
-        "subdirectories": subdirs[:100]
+        "quick_locations": quick_locs,
+        "subdirectories": subdirs[:150]
     }
 

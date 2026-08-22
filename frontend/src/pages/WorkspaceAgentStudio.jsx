@@ -601,6 +601,18 @@ export default function WorkspaceAgentStudio() {
               </button>
             )}
 
+            {activeFolderInfo?.onedrive_dir && (
+              <button
+                onClick={() => {
+                  setFolderPath(activeFolderInfo.onedrive_dir);
+                  handleLoadFolder(activeFolderInfo.onedrive_dir);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold whitespace-nowrap transition-colors"
+              >
+                OneDrive
+              </button>
+            )}
+
             {activeFolderInfo?.documents_dir && (
               <button
                 onClick={() => {

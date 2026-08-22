@@ -601,14 +601,16 @@ def save_workspace_sessions(sessions: List[Dict[str, Any]]):
 async def get_workspace_info():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     user_home = os.path.expanduser("~")
-    desktop = os.path.join(user_home, "Desktop")
-    documents = os.path.join(user_home, "Documents")
+    onedrive = os.path.join(user_home, "OneDrive")
+    desktop = os.path.join(onedrive, "Desktop") if os.path.exists(os.path.join(onedrive, "Desktop")) else os.path.join(user_home, "Desktop")
+    documents = os.path.join(onedrive, "Documents") if os.path.exists(os.path.join(onedrive, "Documents")) else os.path.join(user_home, "Documents")
     downloads = os.path.join(user_home, "Downloads")
     
     return {
         "current_project_dir": project_root,
         "default_folder": project_root,
         "user_home": user_home,
+        "onedrive_dir": onedrive if os.path.exists(onedrive) else None,
         "desktop_dir": desktop if os.path.exists(desktop) else user_home,
         "documents_dir": documents if os.path.exists(documents) else user_home,
         "downloads_dir": downloads if os.path.exists(downloads) else user_home,
