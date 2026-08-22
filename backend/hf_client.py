@@ -591,7 +591,7 @@ if __name__ == "__main__":
         self,
         model: str,
         messages: List[Dict[str, str]],
-        max_tokens: int = 512,
+        max_tokens: int = 4096,
         temperature: float = 0.7
     ) -> Dict[str, Any]:
         """Runs chat inference using Hugging Face router API."""

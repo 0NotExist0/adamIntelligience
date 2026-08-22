@@ -223,23 +223,12 @@ export default function WorkspaceAgentStudio() {
   };
 
   const handleConfirmPathClick = async () => {
-    const isWeb = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    const activeHandle = getActiveDirectoryHandle();
-    if (isWeb && !activeHandle) {
-      addToast('Seleziona la cartella dal popup per autorizzare la scrittura reale sul tuo PC!', 'info');
-      await handleOpenNativeFolderDialog();
-    } else if (activeHandle) {
-      const hasPerm = await verifyAndRequestPermission(activeHandle, true);
-      if (hasPerm) {
-        const tree = await buildTreeFromDirectoryHandle(activeHandle);
-        setFileTree(tree);
-        addToast(`Cartella "${activeHandle.name}" pronta con permessi attivi!`, 'success');
-      } else {
-        await handleOpenNativeFolderDialog();
-      }
-    } else {
-      await handleLoadFolder();
+    const path = folderPath.trim();
+    if (!path) {
+      addToast('Inserisci il percorso di una cartella di lavoro', 'warning');
+      return;
     }
+    await handleLoadFolder(path);
   };
 
   const [isDirBrowserOpen, setIsDirBrowserOpen] = useState(false);
@@ -311,32 +300,47 @@ export default function WorkspaceAgentStudio() {
     setSelectedFile({ fullPath: filePath, relativePath });
     setRightTab('editor');
     
+    // 1. Direct Backend Access for folderPath
+    if (folderPath) {
+      const res = await getWorkspaceFileContent(folderPath, relativePath);
+      if (res.success) {
+        setFileContent(res.content);
+        setIsEditingFile(false);
+        return;
+      }
+    }
+
+    // 2. DirectoryHandle fallback
     const activeHandle = getActiveDirectoryHandle();
     if (activeHandle) {
       const res = await readFileFromDirectoryHandle(activeHandle, relativePath);
       if (res.success) {
         setFileContent(res.content);
         setIsEditingFile(false);
-      } else {
-        setFileContent(`// Errore lettura file: ${res.error}`);
+        return;
       }
-      return;
     }
 
-    if (!folderPath) return;
-    const res = await getWorkspaceFileContent(folderPath, relativePath);
-    if (res.success) {
-      setFileContent(res.content);
-      setIsEditingFile(false);
-    } else {
-      setFileContent(`// Errore lettura file: ${res.error}`);
-    }
+    setFileContent(`// Impossibile leggere il file ${relativePath}`);
   };
 
   const handleSaveCurrentFile = async () => {
     if (!selectedFile) return;
     setIsSavingFile(true);
 
+    // 1. Direct Backend Write for folderPath
+    if (folderPath) {
+      const res = await saveWorkspaceFile(folderPath, selectedFile.relativePath, fileContent);
+      if (res.success) {
+        addToast(`File ${selectedFile.relativePath} salvato su disco!`, 'success');
+        setIsEditingFile(false);
+        appendTerminal('success', `[FILE SALVATO]: ${selectedFile.relativePath}`);
+        setIsSavingFile(false);
+        return;
+      }
+    }
+
+    // 2. DirectoryHandle fallback
     const activeHandle = getActiveDirectoryHandle();
     if (activeHandle) {
       const res = await writeFileToDirectoryHandle(activeHandle, selectedFile.relativePath, fileContent);
@@ -351,18 +355,6 @@ export default function WorkspaceAgentStudio() {
       return;
     }
 
-    if (!folderPath) {
-      setIsSavingFile(false);
-      return;
-    }
-    const res = await saveWorkspaceFile(folderPath, selectedFile.relativePath, fileContent);
-    if (res.success) {
-      addToast(`File ${selectedFile.relativePath} salvato su disco!`, 'success');
-      setIsEditingFile(false);
-      appendTerminal('success', `[FILE SALVATO]: ${selectedFile.relativePath}`);
-    } else {
-      addToast(`Errore salvataggio: ${res.error}`, 'error');
-    }
     setIsSavingFile(false);
   };
 
@@ -370,6 +362,21 @@ export default function WorkspaceAgentStudio() {
     if (!relativePath) return;
     if (!confirm(`Sei sicuro di voler eliminare "${relativePath}"?`)) return;
 
+    // 1. Direct Backend Delete
+    if (folderPath) {
+      const res = await deleteWorkspaceFile(folderPath, relativePath);
+      if (res.success) {
+        addToast(`File ${relativePath} eliminato`, 'info');
+        setSelectedFile(null);
+        setFileContent('');
+        const tree = await getWorkspaceTree(folderPath);
+        setFileTree(tree);
+        appendTerminal('warning', `[FILE ELIMINATO]: ${relativePath}`);
+        return;
+      }
+    }
+
+    // 2. DirectoryHandle fallback
     const activeHandle = getActiveDirectoryHandle();
     if (activeHandle) {
       const res = await deleteFileFromDirectoryHandle(activeHandle, relativePath);
@@ -383,21 +390,6 @@ export default function WorkspaceAgentStudio() {
       } else {
         addToast(`Errore: ${res.error}`, 'error');
       }
-      return;
-    }
-
-    if (!folderPath) return;
-    const res = await deleteWorkspaceFile(folderPath, relativePath);
-    if (res.success) {
-      addToast(`File ${relativePath} eliminato`, 'info');
-      setSelectedFile(null);
-      setFileContent('');
-      // refresh tree
-      const tree = await getWorkspaceTree(folderPath);
-      setFileTree(tree);
-      appendTerminal('warning', `[FILE ELIMINATO]: ${relativePath}`);
-    } else {
-      addToast(`Errore: ${res.error}`, 'error');
     }
   };
 
@@ -729,20 +721,16 @@ export default function WorkspaceAgentStudio() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-extrabold text-white">Agente AI di Workspace</h1>
-                {getActiveDirectoryHandle() ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>DISCO LOCALE PC CONNESSO ({getActiveDirectoryHandle().name})</span>
+                {getActiveDirectoryHandle() || folderPath ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>DISCO LOCALE PC ATTIVO ({getActiveDirectoryHandle()?.name || folderPath.split(/[\\/]/).filter(Boolean).pop() || 'Cartella'})</span>
                   </span>
                 ) : (
-                  <button
-                    onClick={handleOpenNativeFolderDialog}
-                    className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 flex items-center gap-1 cursor-pointer transition-all animate-pulse"
-                    title="Clicca per autorizzare la scrittura reale sulla cartella del computer"
-                  >
-                    <AlertCircle className="w-3 h-3 text-amber-400" />
-                    <span>CLICCA PER AUTORIZZARE SCRITTURA PC</span>
-                  </button>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                    <span>Accesso al Disco Pronto</span>
+                  </span>
                 )}
               </div>
               <p className="text-xs text-slate-400">Seleziona qualsiasi cartella del computer: l'Agente AI leggerà, scriverà ed eseguirà comandi lì dentro</p>

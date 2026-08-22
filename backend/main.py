@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import asyncio
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Header
@@ -70,13 +71,13 @@ class CreateChatbotSpaceRequest(BaseModel):
 class InferenceChatRequest(BaseModel):
     model: str = "meta-llama/Llama-3.2-1B-Instruct"
     messages: List[Dict[str, str]]
-    max_tokens: int = 512
+    max_tokens: int = 8192
     temperature: float = 0.7
 
 class CopilotChatRequest(BaseModel):
     model: str = "Qwen/Qwen2.5-Coder-32B-Instruct"
     messages: List[Dict[str, str]]
-    max_tokens: int = 1024
+    max_tokens: int = 8192
     temperature: float = 0.7
 
 # --- AUTH ROUTES ---

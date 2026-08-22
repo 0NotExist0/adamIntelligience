@@ -104,9 +104,9 @@ class OpenRouterManager:
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = "meta-llama/llama-3.3-70b-instruct:free",
+        model: str = "openrouter/free",
         temperature: float = 0.7,
-        max_tokens: int = 1024
+        max_tokens: int = 8192
     ) -> Dict[str, Any]:
         """
         Sends chat completion to OpenRouter API.
@@ -116,9 +116,9 @@ class OpenRouterManager:
         
         # If user has no API key and model is not a :free model, warn them or default to a free model
         active_model = model
-        if not active_model or active_model == "meta-llama/llama-3.3-70b-instruct:free":
-            # Fallback to free equivalent
-            active_model = "google/gemini-2.0-flash-exp:free"
+        if not active_model or "llama-3.3-70b-instruct:free" in active_model:
+            # Fallback to free router equivalent
+            active_model = "openrouter/free"
 
         payload = {
             "model": active_model,
@@ -127,7 +127,7 @@ class OpenRouterManager:
             "max_tokens": max_tokens
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             try:
                 resp = await client.post(
                     f"{OPENROUTER_API_BASE}/chat/completions",

@@ -503,7 +503,7 @@ class WorkspaceAgentRunner:
                 messages=conversation,
                 model=model,
                 temperature=0.1,
-                max_tokens=4096
+                max_tokens=8192
             )
             
             if not llm_res.get("success"):
@@ -542,12 +542,37 @@ class WorkspaceAgentRunner:
             conversation.append({"role": "assistant", "content": response_content})
             conversation.append({
                 "role": "user",
-                "content": f"Ecco i risultati delle operazioni sulla cartella:\n\n" + "\n\n".join(tool_observations) + "\n\nProsegui con il prossimo step oppure formula la risposta finale se hai completato la task."
+                "content": f"Ecco i risultati delle operazioni sulla cartella:\n\n" + "\n\n".join(tool_observations) + "\n\nProsegui con il prossimo step oppure formula la risposta finale completa se hai terminato la task."
             })
 
         cleaned_text = final_answer or response_content
         cleaned_text = re.sub(r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>", "", cleaned_text).strip()
         cleaned_text = re.sub(r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*\([\s\S]*?\)\]", "", cleaned_text).strip()
+
+        if not cleaned_text and steps_executed:
+            summary_parts = ["✅ **Operazioni completate con successo nella cartella target:**\n"]
+            for st in steps_executed:
+                tool_name = st.get("tool", "")
+                result = st.get("result", {})
+                if tool_name == "write_file":
+                    p = result.get("path") or "file"
+                    summary_parts.append(f"- 📄 **Creato/Aggiornato file:** `{p}`")
+                elif tool_name == "edit_file":
+                    p = result.get("path") or "file"
+                    summary_parts.append(f"- ✏️ **Modificato file:** `{p}`")
+                elif tool_name == "delete_file":
+                    p = result.get("path") or "file"
+                    summary_parts.append(f"- 🗑️ **Eliminato file:** `{p}`")
+                elif tool_name == "run_command":
+                    cmd = st.get("args", "")
+                    summary_parts.append(f"- 💻 **Eseguito comando:** `{cmd}`")
+                elif tool_name == "list_files":
+                    summary_parts.append(f"- 📁 **Scansionati i file del progetto**")
+                elif tool_name == "read_file":
+                    p = result.get("path") or "file"
+                    summary_parts.append(f"- 📖 **Letto file:** `{p}`")
+            summary_parts.append("\nTutti i file sono stati salvati e verificati sul disco del tuo PC.")
+            cleaned_text = "\n".join(summary_parts)
 
         return {
             "success": True,

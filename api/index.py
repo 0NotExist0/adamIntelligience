@@ -207,6 +207,14 @@ async def call_openrouter(
             "error": "Chiave API OpenRouter mancante! Inserisci la tua chiave API (gratuita su openrouter.ai/keys) nelle Impostazioni o nella barra superiore."
         }
 
+    target_model = model or "openrouter/free"
+    payload = {
+        "model": target_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             resp = await client.post(f"{OPENROUTER_API_BASE}/chat/completions", headers=headers, json=payload)

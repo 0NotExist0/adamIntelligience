@@ -462,10 +462,12 @@ export const streamOpenRouterChat = async ({
   let accumulatedReasoning = '';
   let successfulModel = currentModel;
   let lastError = null;
+  let finishReason = 'stop';
 
   for (const targetModel of candidateModels) {
     accumulatedContent = '';
     accumulatedReasoning = '';
+    finishReason = 'stop';
     try {
       const payload = {
         model: targetModel,
@@ -513,7 +515,12 @@ export const streamOpenRouterChat = async ({
               const choice = data.choices?.[0];
               if (choice) {
                 const delta = choice.delta || {};
-                
+
+                // Capture finish_reason so callers can detect length-truncated output
+                if (choice.finish_reason) {
+                  finishReason = choice.finish_reason;
+                }
+
                 // 1. Native Reasoning Stream (DeepSeek R1, Nemotron, etc.)
                 if (delta.reasoning) {
                   accumulatedReasoning += delta.reasoning;
@@ -609,7 +616,8 @@ export const streamOpenRouterChat = async ({
     content: cleanFinal,
     reasoning: finalReasoning,
     rawContent: accumulatedContent,
-    model: successfulModel
+    model: successfulModel,
+    finishReason
   };
 };
 

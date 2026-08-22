@@ -388,63 +388,141 @@ export const downloadFileDirectly = (fileName, content) => {
   }
 };
 
+const TOOL_NAMES = 'list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user';
+
+/**
+ * Scans from an opening '(' to its matching ')', correctly skipping parentheses,
+ * brackets and quote characters that appear INSIDE quoted string arguments (e.g. code).
+ * This is what makes it safe to embed real source code (which contains ), ], quotes)
+ * inside write_file(content="...") without the tool call being truncated at the first ')'.
+ */
+const scanBalancedArgs = (text, openIdx) => {
+  let depth = 1;
+  let i = openIdx + 1;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    // Triple-quoted string (""" or ''')
+    if ((c === '"' || c === "'") && text.slice(i, i + 3) === c + c + c) {
+      const q = c + c + c;
+      const close = text.indexOf(q, i + 3);
+      if (close === -1) return { end: n - 1, args: text.slice(openIdx + 1), truncated: true };
+      i = close + 3;
+      continue;
+    }
+    // Single/double-quoted string (honouring backslash escapes)
+    if (c === '"' || c === "'") {
+      const q = c;
+      i++;
+      while (i < n) {
+        if (text[i] === '\\') { i += 2; continue; }
+        if (text[i] === q) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (c === '(') { depth++; i++; continue; }
+    if (c === ')') {
+      depth--;
+      i++;
+      if (depth === 0) return { end: i - 1, args: text.slice(openIdx + 1, i - 1) };
+      continue;
+    }
+    i++;
+  }
+  // Ran off the end -> the tool call was cut off (model hit token limit mid-call)
+  return { end: n - 1, args: text.slice(openIdx + 1), truncated: true };
+};
+
+/**
+ * Finds bracket-format tool calls ([write_file(...)], [tool call: read_file(...)], ...)
+ * using the balanced scanner. Returns match positions so the same result can drive
+ * both execution (parseModelToolCalls) and cleanup (cleanModelOutput).
+ */
+const findBracketToolCalls = (text) => {
+  const calls = [];
+  const startRe = new RegExp(
+    '(?:<\\|tool_call_start\\|>)?\\s*\\[\\s*(?:tool\\s*call\\s*:\\s*|call\\s*:\\s*|tool\\s*:\\s*|action\\s*:\\s*)?\\s*(' +
+    TOOL_NAMES + ')\\s*\\(',
+    'gi'
+  );
+  let m;
+  while ((m = startRe.exec(text)) !== null) {
+    const name = m[1].toLowerCase();
+    const openParen = m.index + m[0].length - 1; // index of the '('
+    const scan = scanBalancedArgs(text, openParen);
+    const after = scan.end + 1;
+    const tailMatch = /^\s*\]?\s*(?:<\|tool_call_end\|>)?/.exec(text.slice(after));
+    const matchEnd = after + (tailMatch ? tailMatch[0].length : 0);
+    calls.push({
+      name,
+      rawArgs: scan.args.trim(),
+      matchStart: m.index,
+      matchEnd,
+      truncated: !!scan.truncated
+    });
+    startRe.lastIndex = matchEnd; // continue scanning after this call
+  }
+  return calls;
+};
+
 // Multi-format robust tool call parser supporting all model conventions:
 // [list_files()], [tool call: list_files()], [tool: list_files()], ```tool\nlist_files()\n```, Action: list_files, etc.
 export const parseModelToolCalls = (text) => {
   if (!text) return [];
-  const calls = [];
-  
-  // 1. Bracket format with optional prefixes: [tool call: list_files(...)], [call: list_files(...)], [tool: list_files(...)], [list_files(...)]
-  const bracketRegex = /(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?/gi;
-  let match;
-  while ((match = bracketRegex.exec(text)) !== null) {
-    calls.push({
-      name: match[1].toLowerCase(),
-      rawArgs: (match[2] || match[3] || '').trim()
-    });
+
+  // 1. Bracket format (primary) — balanced, code-safe.
+  const bracketCalls = findBracketToolCalls(text);
+  if (bracketCalls.length) {
+    return bracketCalls.map((c) => ({ name: c.name, rawArgs: c.rawArgs, truncated: c.truncated }));
   }
+
+  const calls = [];
 
   // 2. Code block format: ```tool\nlist_files()\n``` or ```json\n{"tool": "list_files", ...}\n```
-  if (!calls.length) {
-    const codeBlockRegex = /```(?:tool|tool_call|json|python)?\s*[\r\n]+([\s\S]*?)```/gi;
-    let cbMatch;
-    while ((cbMatch = codeBlockRegex.exec(text)) !== null) {
-      const inner = cbMatch[1].trim();
-      const fnMatch = /(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])/i.exec(inner);
-      if (fnMatch) {
-        calls.push({
-          name: fnMatch[1].toLowerCase(),
-          rawArgs: (fnMatch[2] || fnMatch[3] || '').trim()
-        });
-      } else {
-        try {
-          const parsedJson = JSON.parse(inner);
-          if (parsedJson.name || parsedJson.tool || parsedJson.action) {
-            const name = (parsedJson.name || parsedJson.tool || parsedJson.action || '').toLowerCase();
-            const argsObj = parsedJson.arguments || parsedJson.args || parsedJson.parameters || {};
-            let argStr = '';
-            if (typeof argsObj === 'string') {
-              argStr = argsObj;
-            } else {
-              argStr = Object.entries(argsObj).map(([k, v]) => `${k}="${v}"`).join(', ');
-            }
-            calls.push({ name, rawArgs: argStr });
+  const codeBlockRegex = /```(?:tool|tool_call|json|python)?\s*[\r\n]+([\s\S]*?)```/gi;
+  let cbMatch;
+  while ((cbMatch = codeBlockRegex.exec(text)) !== null) {
+    const inner = cbMatch[1].trim();
+    const fnMatch = new RegExp(
+      '(?:tool\\s*call\\s*:\\s*|call\\s*:\\s*|tool\\s*:\\s*|action\\s*:\\s*)?(' + TOOL_NAMES + ')\\s*\\(',
+      'i'
+    ).exec(inner);
+    if (fnMatch) {
+      const openParen = fnMatch.index + fnMatch[0].length - 1;
+      const scan = scanBalancedArgs(inner, openParen);
+      calls.push({ name: fnMatch[1].toLowerCase(), rawArgs: scan.args.trim(), truncated: !!scan.truncated });
+    } else {
+      try {
+        const parsedJson = JSON.parse(inner);
+        if (parsedJson.name || parsedJson.tool || parsedJson.action) {
+          const name = (parsedJson.name || parsedJson.tool || parsedJson.action || '').toLowerCase();
+          const argsObj = parsedJson.arguments || parsedJson.args || parsedJson.parameters || {};
+          let argStr = '';
+          if (typeof argsObj === 'string') {
+            argStr = argsObj;
+          } else {
+            argStr = Object.entries(argsObj).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
           }
-        } catch (e) {}
-      }
+          calls.push({ name, rawArgs: argStr, truncated: false });
+        }
+      } catch (e) {}
     }
   }
+  if (calls.length) return calls;
 
   // 3. Unbracketed ReAct format: "tool call: list_files()" or "Action: list_files"
-  if (!calls.length) {
-    const unbracketedRegex = /(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)(?:\s*\(([\s\S]*?)\)|\s*:\s*([\s\S]*?))?(?=\n\n|\n[A-Z]|$)/gi;
-    let ubMatch;
-    while ((ubMatch = unbracketedRegex.exec(text)) !== null) {
-      calls.push({
-        name: ubMatch[1].toLowerCase(),
-        rawArgs: (ubMatch[2] || ubMatch[3] || '').trim()
-      });
-    }
+  const unbracketedRegex = new RegExp(
+    '(?:tool\\s*call\\s*:\\s*|Action\\s*:\\s*|Tool\\s*:\\s*)(' + TOOL_NAMES + ')(?:\\s*\\(([\\s\\S]*?)\\)|\\s*:\\s*([\\s\\S]*?))?(?=\\n\\n|\\n[A-Z]|$)',
+    'gi'
+  );
+  let ubMatch;
+  while ((ubMatch = unbracketedRegex.exec(text)) !== null) {
+    calls.push({
+      name: ubMatch[1].toLowerCase(),
+      rawArgs: (ubMatch[2] || ubMatch[3] || '').trim(),
+      truncated: false
+    });
   }
 
   return calls;
@@ -453,10 +531,21 @@ export const parseModelToolCalls = (text) => {
 export const cleanModelOutput = (text) => {
   if (!text) return '';
   let cleaned = text;
-  cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '');
-  cleaned = cleaned.replace(/\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)\s*(?:\([\s\S]*?\)|\[[\s\S]*?\])?\s*\]/gi, '');
+
+  // Remove bracket-format tool calls by exact span (handles embedded code with ), ], quotes)
+  const bracketCalls = findBracketToolCalls(cleaned);
+  for (let i = bracketCalls.length - 1; i >= 0; i--) {
+    const c = bracketCalls[i];
+    cleaned = cleaned.slice(0, c.matchStart) + cleaned.slice(c.matchEnd);
+  }
+
+  // Remove any leftover explicit tool-call wrappers and other formats
+  cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?(?:<\|tool_call_end\|>|$)/gi, '');
   cleaned = cleaned.replace(/```(?:tool|tool_call)\s*[\r\n]+[\s\S]*?```/gi, '');
-  cleaned = cleaned.replace(/(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|run_command|ask_user)[\s\S]*?(?=\n\n|$)/gi, '');
+  cleaned = cleaned.replace(
+    new RegExp('(?:tool\\s*call\\s*:\\s*|Action\\s*:\\s*|Tool\\s*:\\s*)(' + TOOL_NAMES + ')[\\s\\S]*?(?=\\n\\n|$)', 'gi'),
+    ''
+  );
   return cleaned.trim();
 };
 
@@ -469,6 +558,19 @@ export const extractPathArg = (rawArgs) => {
   return rawArgs.replace(/[()]/g, '').trim();
 };
 
+// Strips one layer of surrounding quotes (triple, double or single) from an argument value.
+const unquoteArgValue = (raw) => {
+  let s = (raw || '').trim().replace(/,\s*$/, '').trim();
+  const triple = /^("""|''')([\s\S]*?)\1$/.exec(s);
+  if (triple) return triple[2];
+  if (s.length >= 2 &&
+      ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  // Unterminated / truncated: strip a leading quote if present, keep the rest
+  return s.replace(/^["']/, '');
+};
+
 export const extractWriteArgs = (rawArgs) => {
   let path = 'nuovo_file.txt';
   let content = '';
@@ -476,14 +578,12 @@ export const extractWriteArgs = (rawArgs) => {
   if (pathMatch) {
     path = pathMatch[1].trim();
   }
-  const contentMatch = /content\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
-  if (contentMatch) {
-    content = contentMatch[1] ?? contentMatch[2] ?? contentMatch[3] ?? contentMatch[4] ?? '';
-  } else {
-    const splitIdx = rawArgs.indexOf('content=');
-    if (splitIdx !== -1) {
-      content = rawArgs.slice(splitIdx + 8).trim().replace(/^["']|["']$/g, '');
-    }
+  // content is (by the tool contract) the LAST argument — take everything after `content=`
+  // and strip its surrounding quotes. This preserves code containing quotes, commas and parens.
+  const cIdx = rawArgs.search(/content\s*=/i);
+  if (cIdx !== -1) {
+    const after = rawArgs.slice(cIdx).replace(/^content\s*=\s*/i, '');
+    content = unquoteArgValue(after);
   }
   return { path, content };
 };
@@ -494,10 +594,16 @@ export const extractEditArgs = (rawArgs) => {
   let replacement = '';
   const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
   if (pathMatch) path = pathMatch[1].trim();
-  const targetMatch = /target\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
-  if (targetMatch) target = targetMatch[1] ?? targetMatch[2] ?? targetMatch[3] ?? targetMatch[4] ?? '';
-  const replMatch = /replacement\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
-  if (replMatch) replacement = replMatch[1] ?? replMatch[2] ?? replMatch[3] ?? replMatch[4] ?? '';
+
+  const tIdx = rawArgs.search(/target\s*=/i);
+  const rIdx = rawArgs.search(/replacement\s*=/i);
+  if (tIdx !== -1) {
+    const end = (rIdx !== -1 && rIdx > tIdx) ? rIdx : rawArgs.length;
+    target = unquoteArgValue(rawArgs.slice(tIdx, end).replace(/^target\s*=\s*/i, ''));
+  }
+  if (rIdx !== -1) {
+    replacement = unquoteArgValue(rawArgs.slice(rIdx).replace(/^replacement\s*=\s*/i, ''));
+  }
   return { path, target, replacement };
 };
 
@@ -565,6 +671,62 @@ export const runBrowserWorkspaceAgentTask = async ({
   const currentHandle = dirHandle || activeDirectoryHandle;
   const cleanFolder = folderPath || currentHandle?.name || 'Cartella Locale';
 
+  // A browser DirectoryHandle only exposes the folder NAME (not a full path), so `folderPath`
+  // is a bare name in that mode. Only treat it as a real disk target for the backend bridge
+  // when it is an actual absolute path (C:\..., /..., \\server\share). Otherwise the picked
+  // handle is the authoritative target and the bridge must NOT be used (it would resolve the
+  // bare name relative to the backend's working directory and write to the wrong place).
+  const isAbsolutePath = (p) => /^([a-zA-Z]:[\\/]|[\\/]{1,2})/.test((p || '').trim());
+  const absoluteFolder = isAbsolutePath(folderPath) ? folderPath.trim() : '';
+
+  // Writes a file to disk using the correct target: backend direct disk write first,
+  // then browser directory handle, then browser download as fallback.
+  const writeFileToDisk = async (path, content) => {
+    const targetDir = folderPath || absoluteFolder || cleanFolder;
+
+    // 1. Direct Backend Disk Write (Native Python Agent on PC)
+    if (targetDir) {
+      for (const url of ['/api/workspace/save-file', 'http://127.0.0.1:8000/api/workspace/save-file']) {
+        try {
+          const bridgeRes = await axios.post(url, {
+            folder_path: targetDir,
+            relative_path: path,
+            content: content
+          }, { timeout: 10000 });
+          if (bridgeRes.data && bridgeRes.data.success) {
+            return {
+              written: true,
+              output: `File '${path}' salvato direttamente sul disco in '${bridgeRes.data.full_path || targetDir}'!`
+            };
+          }
+        } catch (e) {}
+      }
+    }
+
+    // 2. Browser DirectoryHandle (when user selected directory via browser picker)
+    if (currentHandle) {
+      try {
+        const granted = await verifyAndRequestPermission(currentHandle, true);
+        if (granted) {
+          const res = await writeFileToDirectoryHandle(currentHandle, path, content);
+          if (res.success) {
+            return {
+              written: true,
+              output: `File '${path}' salvato direttamente nella cartella '${currentHandle.name}' sul tuo disco PC!`
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Fallback: download into the browser's Downloads folder
+    downloadFileDirectly(path, content);
+    return {
+      written: false,
+      output: `File '${path}' scaricato nella cartella Download del browser. (💡 Per salvarlo direttamente dentro '${cleanFolder}', assicurati che il backend locale sia attivo su localhost:8000 o seleziona la cartella dal pulsante "Sfoglia Cartella dal PC").`
+    };
+  };
+
   // Read current directory contents to provide immediate awareness to the AI agent
   let existingFilesSummary = 'Nessun file presente nella cartella (cartella vuota).';
   if (currentHandle) {
@@ -629,57 +791,102 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
   let lastResponse = '';
   let finalReasoning = '';
   let interactiveOptions = [];
+  let narrative = ''; // running, cleaned explanation accumulated across all steps
+
+  const appendNarrative = (text) => {
+    const c = cleanModelOutput(text);
+    if (c) narrative += (narrative ? '\n\n' : '') + c;
+  };
 
   while (iteration < maxIterations) {
     iteration += 1;
-    let streamContent = '';
-    let streamReasoning = '';
 
-    const llmRes = await streamOpenRouterChat({
-      model,
-      messages: conversation,
-      temperature: 0.1,
-      max_tokens: 4096,
-      apiKey,
-      onChunk: (chunk) => {
-        streamContent = chunk.content || '';
-        streamReasoning = chunk.reasoning || '';
-        if (chunk.reasoning) {
-          finalReasoning = chunk.reasoning;
+    // --- One full model turn, auto-continuing if the output is cut off by the token limit ---
+    let combined = '';
+    let continuations = 0;
+    let turnMessages = conversation;
+    let turnFailed = null;
+
+    while (true) {
+      const baseContent = combined; // text already produced before this continuation call
+      const llmRes = await streamOpenRouterChat({
+        model,
+        messages: turnMessages,
+        temperature: 0.1,
+        max_tokens: 8192,
+        apiKey,
+        onChunk: (chunk) => {
+          if (chunk.reasoning) finalReasoning = chunk.reasoning;
+          if (onStreamChunk) {
+            const liveRaw = baseContent + (chunk.content || '');
+            onStreamChunk({
+              content: cleanModelOutput(liveRaw) || liveRaw,
+              reasoning: chunk.reasoning || finalReasoning,
+              rawContent: chunk.rawContent,
+              iteration,
+              isThinking: !!chunk.reasoning && !chunk.content
+            });
+          }
         }
-        if (onStreamChunk) {
-          onStreamChunk({
-            content: streamContent,
-            reasoning: streamReasoning || finalReasoning,
-            rawContent: chunk.rawContent,
-            iteration,
-            isThinking: !!streamReasoning && !streamContent
-          });
-        }
+      });
+
+      if (!llmRes.success) {
+        turnFailed = llmRes.error;
+        break;
       }
-    });
+      combined += llmRes.content || '';
+      if (llmRes.reasoning) finalReasoning = llmRes.reasoning;
 
-    if (!llmRes.success) {
+      // Continue only when the model stopped because it hit the output-token limit
+      if (llmRes.finishReason === 'length' && continuations < 3 && combined.trim()) {
+        continuations += 1;
+        turnMessages = [
+          ...conversation,
+          { role: 'assistant', content: combined },
+          { role: 'user', content: 'La tua risposta precedente è stata troncata per il limite di token. Continua ESATTAMENTE da dove ti eri fermato, senza ripetere nulla di già scritto. Se stavi scrivendo un file, completa il blocco tool fino alla parentesi finale.' }
+        ];
+        continue;
+      }
+      break;
+    }
+
+    if (turnFailed) {
+      // If we already produced useful narrative, return it gracefully rather than only an error
+      if (narrative) {
+        return {
+          success: true,
+          content: `${narrative}\n\n⚠️ _(Elaborazione interrotta: ${turnFailed})_`,
+          reasoning: finalReasoning,
+          folder: cleanFolder,
+          steps: stepsExecuted,
+          steps_count: stepsExecuted.length,
+          generatedFiles,
+          options: interactiveOptions,
+          model,
+          iterations: iteration
+        };
+      }
       return {
         success: false,
-        error: llmRes.error,
-        content: `⚠️ Errore AI: ${llmRes.error}`,
+        error: turnFailed,
+        content: `⚠️ Errore AI: ${turnFailed}`,
         reasoning: finalReasoning,
         steps: stepsExecuted
       };
     }
 
-    lastResponse = llmRes.content || '';
-    if (llmRes.reasoning) {
-      finalReasoning = llmRes.reasoning;
-    }
+    lastResponse = combined;
 
     const toolCalls = parseModelToolCalls(lastResponse);
 
     if (!toolCalls.length) {
+      appendNarrative(lastResponse);
       finalAnswer = lastResponse;
       break;
     }
+
+    // Keep the explanatory prose that accompanies this step's tool calls
+    appendNarrative(lastResponse);
 
     const toolObservations = [];
     let stopRequested = false;
@@ -695,36 +902,8 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
       } else if (call.name === 'write_file') {
         const { path, content } = extractWriteArgs(call.rawArgs);
         generatedFiles.push({ path, content });
-
-        let written = false;
-
-        // 1. Try local Python agent bridge on 127.0.0.1:8000 (direct native write to Windows disk in C:\...)
-        try {
-          const bridgeRes = await axios.post('http://127.0.0.1:8000/api/workspace/save-file', {
-            folder_path: folderPath || cleanFolder,
-            relative_path: path,
-            content: content
-          }, { timeout: 2500 });
-          if (bridgeRes.data && bridgeRes.data.success) {
-            output = `File '${path}' salvato direttamente sul disco in '${folderPath || cleanFolder}'!`;
-            written = true;
-          }
-        } catch (e) {}
-
-        // 2. Try browser DirectoryHandle (Chrome direct disk write)
-        if (!written && currentHandle) {
-          const res = await writeFileToDirectoryHandle(currentHandle, path, content);
-          if (res.success) {
-            output = `File '${path}' salvato direttamente nella cartella '${currentHandle.name}' sul tuo disco PC!`;
-            written = true;
-          }
-        }
-
-        // 3. Fallback to download if no direct write permission
-        if (!written) {
-          downloadFileDirectly(path, content);
-          output = `File '${path}' scaricato sul computer. (💡 Per salvarlo direttamente dentro '${cleanFolder}', seleziona la cartella dal pulsante "Sfoglia Cartella dal PC" o avvia 'python backend/main.py').`;
-        }
+        const diskRes = await writeFileToDisk(path, content);
+        output = diskRes.output;
       } else if (call.name === 'run_command') {
         const cmdMatch = /command\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(call.rawArgs);
         const cmd = cmdMatch ? (cmdMatch[1] || cmdMatch[2] || cmdMatch[3] || cmdMatch[4] || '') : call.rawArgs.replace(/^["']|["']$/g, '');
@@ -740,51 +919,106 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
         }
       } else if (call.name === 'read_file') {
         const path = extractPathArg(call.rawArgs);
-        if (currentHandle && path) {
-          const res = await readFileFromDirectoryHandle(currentHandle, path);
-          output = res.success ? `=== CONTENUTO DI ${path} ===\n${res.content}` : `Errore lettura: ${res.error}`;
-        } else {
-          output = `Lettura file '${path}' eseguita.`;
+        let readContent = null;
+        if (folderPath) {
+          for (const url of ['/api/workspace/file-content', 'http://127.0.0.1:8000/api/workspace/file-content']) {
+            try {
+              const res = await axios.get(url, { params: { folder_path: folderPath, relative_path: path }, timeout: 5000 });
+              if (res.data && res.data.success) {
+                readContent = res.data.content;
+                break;
+              }
+            } catch (e) {}
+          }
         }
+        if (readContent === null && currentHandle && path) {
+          const res = await readFileFromDirectoryHandle(currentHandle, path);
+          if (res.success) readContent = res.content;
+        }
+        output = readContent !== null ? `=== CONTENUTO DI ${path} ===\n${readContent}` : `File '${path}' non trovato o non accessibile.`;
       } else if (call.name === 'list_files') {
-        if (currentHandle) {
+        let fileList = [];
+        if (folderPath) {
+          for (const url of ['/api/workspace/tree', 'http://127.0.0.1:8000/api/workspace/tree']) {
+            try {
+              const res = await axios.get(url, { params: { folder_path: folderPath }, timeout: 5000 });
+              if (res.data && res.data.tree) {
+                const traverse = (items, pfx = '') => {
+                  for (const item of items) {
+                    const itemPath = pfx ? `${pfx}/${item.name}` : item.name;
+                    if (item.is_dir) {
+                      traverse(item.children || [], itemPath);
+                    } else {
+                      fileList.push(`${itemPath} (${item.size || 0} bytes)`);
+                    }
+                  }
+                };
+                traverse(res.data.tree);
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+        if (!fileList.length && currentHandle) {
           const tree = await buildTreeFromDirectoryHandle(currentHandle);
-          const fileNames = [];
           const traverse = (items, pfx = '') => {
             for (const item of items) {
               const itemPath = pfx ? `${pfx}/${item.name}` : item.name;
               if (item.is_dir) {
                 traverse(item.children || [], itemPath);
               } else {
-                fileNames.push(`${itemPath} (${item.size || 0} bytes)`);
+                fileList.push(`${itemPath} (${item.size || 0} bytes)`);
               }
             }
           };
           traverse(tree);
-          output = fileNames.length > 0 ? `File presenti nella cartella:\n${fileNames.map((f) => `- ${f}`).join('\n')}` : 'Cartella vuota.';
-        } else {
-          output = 'Cartella vuota.';
         }
+        output = fileList.length > 0 ? `File presenti nella cartella:\n${fileList.map((f) => `- ${f}`).join('\n')}` : 'Nessun file trovato nella cartella.';
       } else if (call.name === 'edit_file') {
         const { path, target, replacement } = extractEditArgs(call.rawArgs);
-        if (currentHandle && path) {
-          const readRes = await readFileFromDirectoryHandle(currentHandle, path);
-          if (readRes.success) {
-            const newContent = readRes.content.replace(target, replacement);
-            const writeRes = await writeFileToDirectoryHandle(currentHandle, path, newContent);
-            output = writeRes.success ? `File '${path}' modificato con successo sul disco!` : `Errore modifica: ${writeRes.error}`;
-          } else {
-            output = `Errore lettura file per modifica: ${readRes.error}`;
+        let origContent = null;
+        if (folderPath) {
+          for (const url of ['/api/workspace/file-content', 'http://127.0.0.1:8000/api/workspace/file-content']) {
+            try {
+              const res = await axios.get(url, { params: { folder_path: folderPath, relative_path: path }, timeout: 5000 });
+              if (res.data && res.data.success) {
+                origContent = res.data.content;
+                break;
+              }
+            } catch (e) {}
           }
+        }
+        if (origContent === null && currentHandle && path) {
+          const res = await readFileFromDirectoryHandle(currentHandle, path);
+          if (res.success) origContent = res.content;
+        }
+
+        if (origContent !== null) {
+          const newContent = origContent.replace(target, replacement);
+          const saveRes = await writeFileToDisk(path, newContent);
+          output = saveRes.output;
         } else {
-          output = `Modifica simulata su ${path}.`;
+          output = `Impossibile modificare '${path}': file non trovato.`;
         }
       } else if (call.name === 'delete_file') {
         const path = extractPathArg(call.rawArgs);
-        if (currentHandle && path) {
+        let deleted = false;
+        if (folderPath) {
+          for (const url of ['/api/workspace/delete-file', 'http://127.0.0.1:8000/api/workspace/delete-file']) {
+            try {
+              const res = await axios.post(url, { folder_path: folderPath, relative_path: path }, { timeout: 5000 });
+              if (res.data && res.data.success) {
+                deleted = true;
+                output = `File '${path}' eliminato con successo dal disco.`;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+        if (!deleted && currentHandle && path) {
           const res = await deleteFileFromDirectoryHandle(currentHandle, path);
           output = res.success ? `File '${path}' eliminato dal disco.` : `Errore: ${res.error}`;
-        } else {
+        } else if (!deleted) {
           output = `File '${path}' rimosso.`;
         }
       }
@@ -805,11 +1039,39 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
     conversation.push({ role: 'assistant', content: lastResponse });
     conversation.push({
       role: 'user',
-      content: `Ecco i risultati delle operazioni eseguite sulla cartella:\n\n${toolObservations.join('\n\n')}\n\nProsegui con il prossimo step oppure formula la risposta finale se hai completato la task.`
+      content: `Ecco i risultati delle operazioni eseguite sulla cartella:\n\n${toolObservations.join('\n\n')}\n\nProsegui con il prossimo step oppure formula la risposta finale completa in italiano.`
     });
   }
 
   let cleaned = cleanModelOutput(finalAnswer || lastResponse);
+
+  // If cleaned output is empty after tool calls, assemble a complete, structured summary
+  if (!cleaned && stepsExecuted.length > 0) {
+    const summaryLines = ['✅ **Operazioni completate con successo nella cartella:**\n'];
+    for (const st of stepsExecuted) {
+      if (st.tool === 'write_file') {
+        const p = extractPathArg(st.args) || 'file';
+        summaryLines.push(`- 📄 **Creato/Aggiornato file:** \`${p}\``);
+      } else if (st.tool === 'edit_file') {
+        const p = extractPathArg(st.args) || 'file';
+        summaryLines.push(`- ✏️ **Modificato file:** \`${p}\``);
+      } else if (st.tool === 'delete_file') {
+        const p = extractPathArg(st.args) || 'file';
+        summaryLines.push(`- 🗑️ **Eliminato file:** \`${p}\``);
+      } else if (st.tool === 'run_command') {
+        summaryLines.push(`- 💻 **Comando eseguito:** \`${st.args}\``);
+      } else if (st.tool === 'list_files') {
+        summaryLines.push(`- 📁 **Scansione file completata**`);
+      } else if (st.tool === 'read_file') {
+        const p = extractPathArg(st.args) || 'file';
+        summaryLines.push(`- 📖 **Letto file:** \`${p}\``);
+      }
+    }
+    summaryLines.push(`\nTutti i file sono stati salvati direttamente nella cartella di lavoro sul tuo computer.`);
+    cleaned = summaryLines.join('\n');
+  } else if (narrative && !cleaned.includes(narrative.slice(0, 40))) {
+    cleaned = `${narrative}\n\n${cleaned}`.trim();
+  }
 
   // If interactive options weren't explicitly extracted from ask_user, check if text has questions/options
   if (!interactiveOptions.length && (cleaned.includes('?') || cleaned.toLowerCase().includes('opzion') || cleaned.toLowerCase().includes('come preferisci') || cleaned.toLowerCase().includes('cosa vorresti'))) {
@@ -821,7 +1083,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
 
   return {
     success: true,
-    content: cleaned,
+    content: cleaned || 'Operazione completata con successo.',
     reasoning: finalReasoning,
     folder: cleanFolder,
     steps: stepsExecuted,

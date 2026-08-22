@@ -56,9 +56,9 @@ class CopilotEngine:
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = "google/gemini-2.0-flash-exp:free",
+        model: str = "openrouter/free",
         temperature: float = 0.7,
-        max_tokens: int = 1024
+        max_tokens: int = 8192
     ) -> Dict[str, Any]:
         """
         Processes conversation with selected AI model on OpenRouter (with HF fallback),
