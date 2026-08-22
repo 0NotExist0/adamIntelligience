@@ -2,6 +2,7 @@ import axios from 'axios';
 import { getMemories } from './memory';
 import { sendOpenRouterChat, streamOpenRouterChat, getOpenRouterKey } from './openrouter';
 import { multiMethodWebSearch } from './webSearch';
+import { extractToolCalls, executeAgentTool, AGENT_TOOLS_DEFINITIONS } from './agentTools';
 
 const META_ANALYZER_PROMPT = `Sei un Meta-Agente AI specializzato nell'analisi preliminare dei prompt e nell'ottimizzazione degli iperparametri di inferenza.
 Il tuo compito è analizzare il prompt dell'utente e determinare:
@@ -241,27 +242,63 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
 - Fornisci SEMPRE una risposta COMPLETA fino alla conclusione naturale del discorso, senza mai troncare a metà o lasciare frasi sospese.
 - Se utilizzi dati dal web, cita le relative fonti quando appropriato.
 - Se l'argomento tocca una regola salvata nel Memory Vault, rispettala tassativamente.
+
+${AGENT_TOOLS_DEFINITIONS}
 `;
 
   // Build clean history
   const history = messages.filter((m) => m.role !== 'system');
-  const apiMessages = [
+  let currentMessages = [
     { role: 'system', content: strictSystemPrompt },
     ...history
   ];
 
-  // If prompt not in history, append it
-  if (apiMessages[apiMessages.length - 1]?.content !== prompt) {
-    apiMessages.push({ role: 'user', content: prompt });
+  if (currentMessages[currentMessages.length - 1]?.content !== prompt) {
+    currentMessages.push({ role: 'user', content: prompt });
   }
 
-  const genResult = await sendOpenRouterChat({
-    model,
-    messages: apiMessages,
-    temperature: calibratedTemp,
-    max_tokens: calibratedTokens,
-    enableMemory: false // Already injected with strict hierarchy above
-  });
+  let finalResult = null;
+  let loopCount = 0;
+  const maxIterations = 3;
+  let accumulatedSources = [...(webData.results || [])];
+
+  while (loopCount < maxIterations) {
+    loopCount++;
+    finalResult = await sendOpenRouterChat({
+      model,
+      messages: currentMessages,
+      temperature: calibratedTemp,
+      max_tokens: calibratedTokens,
+      enableMemory: false
+    });
+
+    if (!finalResult.success) break;
+
+    const toolCalls = extractToolCalls(finalResult.content || finalResult.rawContent);
+    if (toolCalls.length === 0) {
+      // Model provided the final answer
+      break;
+    }
+
+    // Execute requested tools
+    let observations = [];
+    for (const call of toolCalls) {
+      const toolRes = await executeAgentTool(call.name, call.param);
+      if (toolRes.metadata?.sources) {
+        accumulatedSources = [...accumulatedSources, ...toolRes.metadata.sources];
+      }
+      observations.push(`[RISULTATO TOOL ${call.name}("${call.param}")]:\n${toolRes.output}`);
+    }
+
+    currentMessages.push({
+      role: 'assistant',
+      content: finalResult.content || finalResult.rawContent
+    });
+    currentMessages.push({
+      role: 'user',
+      content: `Ecco i dati reperiti dai tool:\n${observations.join('\n\n')}\n\nOra formula la risposta finale completa per l'utente in lingua italiana.`
+    });
+  }
 
   if (onProgressStep) {
     onProgressStep({
@@ -271,16 +308,21 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
     });
   }
 
+  // Clean any residual tool tags
+  let cleanedContent = finalResult?.content || '';
+  cleanedContent = cleanedContent.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, '').trim();
+
   return {
-    ...genResult,
+    ...finalResult,
+    content: cleanedContent || finalResult?.content,
     agentTrace: {
       meta,
       calibratedTemperature: calibratedTemp,
       calibratedMaxTokens: calibratedTokens,
       taskType: meta.task_type,
       reasoningStrategy: meta.reasoning_strategy,
-      webSources: webData.results || [],
-      webSearchPerformed: Boolean(webData.results && webData.results.length > 0),
+      webSources: accumulatedSources,
+      webSearchPerformed: Boolean(accumulatedSources.length > 0),
       searchQuery: meta.search_query,
       prioritizedMemoriesCount: savedMemories.length,
       prioritizedMemories: savedMemories.slice(0, 5),
@@ -290,7 +332,7 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
 };
 
 /**
- * Autonomous Intelligent Agent Pipeline with Real-Time Live Streaming Output & Thoughts
+ * Autonomous Intelligent Agent Pipeline with Real-Time Live Streaming Output & Autonomous Tool Execution
  */
 export const runAgentChatPipelineStream = async ({
   prompt,
@@ -353,7 +395,7 @@ export const runAgentChatPipelineStream = async ({
     });
   }
 
-  const strictSystemPrompt = `Sei un Agente AI di Massima Precisione e Ragionamento Avanzato.
+  const strictSystemPrompt = `Sei un Agente AI Autonomo di Massima Precisione e Ragionamento Avanzato.
 Il tuo obiettivo assoluto è fornire una risposta esatta, chiara, verificata e PRIVA DI DUBBI.
 
 =============================================================================
@@ -366,9 +408,9 @@ Il tuo obiettivo assoluto è fornire una risposta esatta, chiara, verificata e P
 ${memoryContext}
 
 2. 🥈 PRIORITÀ 2: VERIFICA WEB IN TEMPO REALE.
-   Utilizza le seguenti informazioni verificate dal Web per garantire dati aggiornati ed esatti (fatti, eventi, link, specifiche), a patto che NON violino la Priorità 1:
+   Utilizza le seguenti informazioni verificate dal Web per garantire dati aggiornati ed esatti (fatti, eventi, orari, link, specifiche), a patto che NON violino la Priorità 1:
 
-${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
+${webData.summary_text || 'Nessuna ricerca web preliminare.'}
 
 3. 🥉 PRIORITÀ 3: CONOSCENZA INTERNA DEL MODELLO.
    Utilizzata per sintesi, logica e spiegazione coerente.
@@ -380,47 +422,101 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
 - Fornisci SEMPRE una risposta COMPLETA fino alla conclusione naturale del discorso, senza mai troncare a metà o lasciare frasi sospese.
 - Se utilizzi dati dal web, cita le relative fonti quando appropriato.
 - Se l'argomento tocca una regola salvata nel Memory Vault, rispettala tassativamente.
+
+${AGENT_TOOLS_DEFINITIONS}
 `;
 
   const history = messages.filter((m) => m.role !== 'system');
-  const apiMessages = [
+  let currentMessages = [
     { role: 'system', content: strictSystemPrompt },
     ...history
   ];
 
-  if (apiMessages[apiMessages.length - 1]?.content !== prompt) {
-    apiMessages.push({ role: 'user', content: prompt });
+  if (currentMessages[currentMessages.length - 1]?.content !== prompt) {
+    currentMessages.push({ role: 'user', content: prompt });
   }
 
+  let accumulatedSources = [...(webData.results || [])];
   const agentTrace = {
     meta,
     calibratedTemperature: calibratedTemp,
     calibratedMaxTokens: calibratedTokens,
     taskType: meta.task_type,
     reasoningStrategy: meta.reasoning_strategy,
-    webSources: webData.results || [],
-    webSearchPerformed: Boolean(webData.results && webData.results.length > 0),
+    webSources: accumulatedSources,
+    webSearchPerformed: Boolean(accumulatedSources.length > 0),
     searchQuery: meta.search_query,
     prioritizedMemoriesCount: savedMemories.length,
     prioritizedMemories: savedMemories.slice(0, 5),
     confidenceScore: '100% (Verificato)'
   };
 
-  const streamResult = await streamOpenRouterChat({
-    model,
-    messages: apiMessages,
-    temperature: calibratedTemp,
-    max_tokens: calibratedTokens,
-    enableMemory: false,
-    onChunk: (chunk) => {
-      if (onStreamChunk) {
-        onStreamChunk({
-          ...chunk,
-          agentTrace
-        });
+  let finalStreamResult = null;
+  let loopCount = 0;
+  const maxIterations = 3;
+
+  while (loopCount < maxIterations) {
+    loopCount++;
+
+    finalStreamResult = await streamOpenRouterChat({
+      model,
+      messages: currentMessages,
+      temperature: calibratedTemp,
+      max_tokens: calibratedTokens,
+      enableMemory: false,
+      onChunk: (chunk) => {
+        if (onStreamChunk) {
+          // Clean any raw tool call syntax in real-time display
+          let displayClean = chunk.content.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, '').trimStart();
+          onStreamChunk({
+            ...chunk,
+            content: displayClean || (chunk.content.includes('<|tool_call_start|>') ? '🔎 Verifica e consultazione fonti web in corso...' : chunk.content),
+            agentTrace: {
+              ...agentTrace,
+              webSources: accumulatedSources,
+              webSearchPerformed: Boolean(accumulatedSources.length > 0)
+            }
+          });
+        }
       }
+    });
+
+    if (!finalStreamResult.success) break;
+
+    const toolCalls = extractToolCalls(finalStreamResult.content || finalStreamResult.rawContent);
+    if (toolCalls.length === 0) {
+      // Model finished with complete final response
+      break;
     }
-  });
+
+    // Model emitted a tool call: execute tool in client!
+    if (onProgressStep) {
+      onProgressStep({
+        stage: 'tool_execution',
+        label: `🛠️ Esecuzione Tool Autonomo: ${toolCalls.map(t => `${t.name}("${t.param}")`).join(', ')}...`,
+        progress: 85,
+        meta
+      });
+    }
+
+    let observations = [];
+    for (const call of toolCalls) {
+      const toolRes = await executeAgentTool(call.name, call.param);
+      if (toolRes.metadata?.sources) {
+        accumulatedSources = [...accumulatedSources, ...toolRes.metadata.sources];
+      }
+      observations.push(`[RISULTATO TOOL ${call.name}("${call.param}")]:\n${toolRes.output}`);
+    }
+
+    currentMessages.push({
+      role: 'assistant',
+      content: finalStreamResult.content || finalStreamResult.rawContent
+    });
+    currentMessages.push({
+      role: 'user',
+      content: `Ecco i dati reperiti dai tool richiesti:\n${observations.join('\n\n')}\n\nOra formula la risposta finale e completa per l'utente in lingua italiana.`
+    });
+  }
 
   if (onProgressStep) {
     onProgressStep({
@@ -430,8 +526,17 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
     });
   }
 
+  // Clean any residual tool tags
+  let cleanedContent = finalStreamResult?.content || '';
+  cleanedContent = cleanedContent.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, '').trim();
+
   return {
-    ...streamResult,
-    agentTrace
+    ...finalStreamResult,
+    content: cleanedContent || finalStreamResult?.content,
+    agentTrace: {
+      ...agentTrace,
+      webSources: accumulatedSources,
+      webSearchPerformed: Boolean(accumulatedSources.length > 0)
+    }
   };
 };
