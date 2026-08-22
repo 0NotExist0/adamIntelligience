@@ -539,11 +539,16 @@ from backend.workspace_agent import (
     delete_workspace_file,
     search_code_in_workspace,
     execute_workspace_command,
+    open_native_folder_dialog,
+    list_system_drives_and_subdirs,
     WorkspaceAgentRunner
 )
 
 class WorkspaceSetFolderRequest(BaseModel):
     folder_path: str
+
+class WorkspaceBrowseNativeRequest(BaseModel):
+    initial_dir: Optional[str] = None
 
 class WorkspaceSaveFileRequest(BaseModel):
     folder_path: str
@@ -597,14 +602,38 @@ async def get_workspace_info():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     user_home = os.path.expanduser("~")
     desktop = os.path.join(user_home, "Desktop")
+    documents = os.path.join(user_home, "Documents")
+    downloads = os.path.join(user_home, "Downloads")
     
     return {
         "current_project_dir": project_root,
         "default_folder": project_root,
         "user_home": user_home,
         "desktop_dir": desktop if os.path.exists(desktop) else user_home,
+        "documents_dir": documents if os.path.exists(documents) else user_home,
+        "downloads_dir": downloads if os.path.exists(downloads) else user_home,
         "platform": sys.platform
     }
+
+@app.post("/api/workspace/browse-native")
+async def browse_native_folder(req: WorkspaceBrowseNativeRequest):
+    """Opens native Windows folder selection window on the user PC and returns chosen path."""
+    chosen = open_native_folder_dialog(initial_dir=req.initial_dir)
+    if not chosen:
+        return {"cancelled": True, "folder_path": None}
+    
+    files = list_flat_files(chosen, max_files=50)
+    return {
+        "cancelled": False,
+        "success": True,
+        "folder_path": chosen,
+        "folder_name": os.path.basename(chosen),
+        "total_files_sample": len(files)
+    }
+
+@app.get("/api/workspace/browse-dirs")
+async def browse_workspace_directories(target_path: Optional[str] = None):
+    return list_system_drives_and_subdirs(target_path)
 
 @app.post("/api/workspace/set-folder")
 async def set_workspace_folder(req: WorkspaceSetFolderRequest):

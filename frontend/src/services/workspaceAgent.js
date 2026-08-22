@@ -39,6 +39,34 @@ export const getWorkspaceInfo = async () => {
 };
 
 /**
+ * Triggers native OS folder picker window on user's PC via backend
+ */
+export const browseNativeOSFolder = async (initialDir = '') => {
+  try {
+    const res = await axios.post('/api/workspace/browse-native', {
+      initial_dir: initialDir || undefined
+    });
+    return res.data;
+  } catch (err) {
+    return { cancelled: true, error: err.message };
+  }
+};
+
+/**
+ * Lists drives and directories on PC for interactive explorer navigation
+ */
+export const browseLocalDirectories = async (targetPath = '') => {
+  try {
+    const res = await axios.get('/api/workspace/browse-dirs', {
+      params: { target_path: targetPath || undefined }
+    });
+    return res.data;
+  } catch (err) {
+    return { drives: [], quick_locations: [], subdirectories: [] };
+  }
+};
+
+/**
  * Validates and sets active target folder on backend
  */
 export const validateAndSetWorkspaceFolder = async (folderPath) => {

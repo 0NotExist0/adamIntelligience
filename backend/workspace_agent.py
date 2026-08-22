@@ -502,3 +502,68 @@ class WorkspaceAgentRunner:
             "model": model,
             "iterations": iteration
         }
+
+def open_native_folder_dialog(initial_dir: Optional[str] = None) -> Optional[str]:
+    """Opens a native OS folder picker dialog (Windows Explorer / macOS / Linux) and returns chosen directory."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        start_dir = initial_dir if (initial_dir and os.path.exists(initial_dir)) else os.path.expanduser("~")
+        chosen = filedialog.askdirectory(
+            initialdir=start_dir,
+            title="Seleziona la cartella di lavoro su cui far operare l'Agente AI"
+        )
+        root.destroy()
+        return os.path.abspath(chosen) if chosen else None
+    except Exception as e:
+        print(f"Error opening native dialog: {e}")
+        return None
+
+def list_system_drives_and_subdirs(target_path: Optional[str] = None) -> Dict[str, Any]:
+    """Lists drives and subdirectories to browse local PC filesystem easily in UI."""
+    drives = []
+    if sys.platform.startswith("win"):
+        import string
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            if os.path.exists(drive):
+                drives.append(drive)
+    else:
+        drives.append("/")
+
+    user_home = os.path.expanduser("~")
+    desktop = os.path.join(user_home, "Desktop")
+    documents = os.path.join(user_home, "Documents")
+    downloads = os.path.join(user_home, "Downloads")
+    
+    current = os.path.abspath(target_path) if (target_path and os.path.exists(target_path)) else user_home
+    parent = os.path.dirname(current) if os.path.dirname(current) != current else None
+
+    subdirs = []
+    try:
+        for entry in os.scandir(current):
+            if entry.is_dir() and not entry.name.startswith(('.', '$')):
+                subdirs.append({
+                    "name": entry.name,
+                    "path": os.path.abspath(entry.path)
+                })
+        subdirs.sort(key=lambda s: s["name"].lower())
+    except Exception:
+        pass
+
+    return {
+        "current": current,
+        "parent": parent,
+        "drives": drives,
+        "quick_locations": [
+            {"label": "Desktop", "path": desktop if os.path.exists(desktop) else user_home},
+            {"label": "Documenti", "path": documents if os.path.exists(documents) else user_home},
+            {"label": "Download", "path": downloads if os.path.exists(downloads) else user_home},
+            {"label": "Home Utente", "path": user_home},
+        ],
+        "subdirectories": subdirs[:100]
+    }
+

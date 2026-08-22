@@ -31,7 +31,10 @@ import {
   MessageSquare,
   Zap,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  X,
+  HardDrive,
+  FolderUp
 } from 'lucide-react';
 import { 
   getWorkspaceInfo, 
@@ -48,7 +51,9 @@ import {
   saveChatSession,
   deleteChatSession,
   exportChatSessionAsMarkdown,
-  pickDirectoryNative
+  pickDirectoryNative,
+  browseNativeOSFolder,
+  browseLocalDirectories
 } from '../services/workspaceAgent';
 import { POPULAR_MODELS } from '../services/openrouter';
 import { useToast } from '../components/Toast';
@@ -155,13 +160,51 @@ export default function WorkspaceAgentStudio() {
     setIsLoadingTree(false);
   };
 
+  const [isDirBrowserOpen, setIsDirBrowserOpen] = useState(false);
+  const [browserDirsData, setBrowserDirsData] = useState(null);
+  const [isBrowsingDirs, setIsBrowsingDirs] = useState(false);
+
+  const handleOpenNativeFolderDialog = async () => {
+    setIsLoadingTree(true);
+    addToast('Apertura finestra di selezione cartella sul tuo computer...', 'info');
+    try {
+      const res = await browseNativeOSFolder(folderPath);
+      if (!res.cancelled && res.success && res.folder_path) {
+        setFolderPath(res.folder_path);
+        await handleLoadFolder(res.folder_path);
+      } else if (res.cancelled) {
+        addToast('Selezione cartella annullata', 'info');
+      } else {
+        // Fallback to browser picker
+        handleBrowseNative();
+      }
+    } catch (err) {
+      handleBrowseNative();
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
+  const handleOpenDirBrowser = async (target = '') => {
+    setIsDirBrowserOpen(true);
+    setIsBrowsingDirs(true);
+    const data = await browseLocalDirectories(target || folderPath);
+    setBrowserDirsData(data);
+    setIsBrowsingDirs(false);
+  };
+
+  const handleSelectBrowserDir = async (path) => {
+    setIsDirBrowserOpen(false);
+    setFolderPath(path);
+    await handleLoadFolder(path);
+  };
+
   const handleBrowseNative = async () => {
     const res = await pickDirectoryNative();
     if (res.success && res.name) {
-      // In browser mode, use handle name or prompt
       addToast(`Cartella "${res.name}" selezionata dal browser`, 'info');
     } else if (!res.cancelled) {
-      addToast('Usa l\'input del percorso per specificare la cartella sul computer', 'info');
+      addToast('Usa la finestra nativa o digita il percorso della cartella sul computer', 'info');
     }
   };
 
@@ -474,31 +517,53 @@ export default function WorkspaceAgentStudio() {
   return (
     <div className="p-6 max-w-7xl mx-auto h-[calc(100vh-5rem)] flex flex-col space-y-4 animate-in fade-in duration-300">
       {/* Top Workspace Bar */}
-      <div className="glass-panel p-4 rounded-3xl border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-950/80 shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
-            <FolderCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold text-white">Agente AI di Workspace</h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                LOCAL ENGINE
-              </span>
+      <div className="glass-panel p-4 rounded-3xl border border-purple-500/30 flex flex-col gap-3 bg-slate-950/90 shadow-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <FolderCheck className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-400">Opera direttamente sui file, esegue comandi e salva la cronologia</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-extrabold text-white">Agente AI di Workspace</h1>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>PC LOCALE ATTIVO</span>
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Seleziona qualsiasi cartella del computer: l'Agente AI leggerà, scriverà ed eseguirà comandi lì dentro</p>
+            </div>
+          </div>
+
+          {/* Action Buttons: Native Windows Dialog & Browser */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleOpenNativeFolderDialog}
+              disabled={isLoadingTree}
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:opacity-95 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-500/30 active:scale-95 transition-all"
+            >
+              {isLoadingTree ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderOpen className="w-4 h-4" />}
+              <span>Sfoglia Cartella dal PC</span>
+            </button>
+
+            <button
+              onClick={() => handleOpenDirBrowser()}
+              className="px-3.5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-purple-500/30 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow"
+            >
+              <span>🧭 Esplora Directory PC</span>
+            </button>
           </div>
         </div>
 
-        {/* Folder Path Selector */}
-        <div className="flex-1 max-w-2xl flex items-center gap-2">
+        {/* Folder Path Input & Quick Shortcuts Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-slate-800/80">
           <div className="relative flex-1">
             <input
               type="text"
               value={folderPath}
               onChange={(e) => setFolderPath(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLoadFolder()}
-              placeholder="Inserisci il percorso della cartella (es. C:\Users\... o ./cartella)..."
+              placeholder="Percorso cartella locale (es. C:\Progetti\MioSito o C:\Users\...)..."
               className="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-2 text-xs font-mono text-purple-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 shadow-inner"
             />
           </div>
@@ -506,37 +571,62 @@ export default function WorkspaceAgentStudio() {
           <button
             onClick={() => handleLoadFolder()}
             disabled={isLoadingTree}
-            className="px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-500/25 transition-all shrink-0"
+            className="px-4 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors shrink-0"
           >
-            {isLoadingTree ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
-            <span>Carica Cartella</span>
+            {isLoadingTree ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
+            <span>Conferma Percorso</span>
           </button>
 
-          {activeFolderInfo?.current_project_dir && (
-            <button
-              onClick={() => {
-                setFolderPath(activeFolderInfo.current_project_dir);
-                handleLoadFolder(activeFolderInfo.current_project_dir);
-              }}
-              title="Usa la cartella del progetto attuale"
-              className="px-3 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold shrink-0 transition-colors"
-            >
-              Progetto
-            </button>
-          )}
+          {/* Quick Shortcuts */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+            {activeFolderInfo?.current_project_dir && (
+              <button
+                onClick={() => {
+                  setFolderPath(activeFolderInfo.current_project_dir);
+                  handleLoadFolder(activeFolderInfo.current_project_dir);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold whitespace-nowrap transition-colors"
+              >
+                Progetto
+              </button>
+            )}
 
-          {activeFolderInfo?.desktop_dir && (
-            <button
-              onClick={() => {
-                setFolderPath(activeFolderInfo.desktop_dir);
-                handleLoadFolder(activeFolderInfo.desktop_dir);
-              }}
-              title="Usa Desktop"
-              className="px-3 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold shrink-0 transition-colors"
-            >
-              Desktop
-            </button>
-          )}
+            {activeFolderInfo?.desktop_dir && (
+              <button
+                onClick={() => {
+                  setFolderPath(activeFolderInfo.desktop_dir);
+                  handleLoadFolder(activeFolderInfo.desktop_dir);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold whitespace-nowrap transition-colors"
+              >
+                Desktop
+              </button>
+            )}
+
+            {activeFolderInfo?.documents_dir && (
+              <button
+                onClick={() => {
+                  setFolderPath(activeFolderInfo.documents_dir);
+                  handleLoadFolder(activeFolderInfo.documents_dir);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold whitespace-nowrap transition-colors"
+              >
+                Documenti
+              </button>
+            )}
+
+            {activeFolderInfo?.downloads_dir && (
+              <button
+                onClick={() => {
+                  setFolderPath(activeFolderInfo.downloads_dir);
+                  handleLoadFolder(activeFolderInfo.downloads_dir);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold whitespace-nowrap transition-colors"
+              >
+                Download
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -989,6 +1079,131 @@ export default function WorkspaceAgentStudio() {
           </div>
         </div>
       </div>
+      {/* Modal: Navigatore Directory del PC */}
+      {isDirBrowserOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-2xl bg-slate-900 border border-purple-500/40 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-purple-300 flex items-center justify-center">
+                  <HardDrive className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Esploratore Cartelle del PC</h3>
+                  <p className="text-[11px] text-slate-400 font-mono truncate max-w-md">
+                    {browserDirsData?.current || 'Caricamento directory...'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsDirBrowserOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Drives & Locations */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Unità / Drive:</span>
+                {browserDirsData?.drives?.map((dr) => (
+                  <button
+                    key={dr}
+                    onClick={() => handleOpenDirBrowser(dr)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-purple-950/60 text-purple-200 border border-slate-800 text-xs font-mono font-bold transition-all"
+                  >
+                    {dr}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Posizioni Rapide:</span>
+                {browserDirsData?.quick_locations?.map((loc) => (
+                  <button
+                    key={loc.label}
+                    onClick={() => handleOpenDirBrowser(loc.path)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all"
+                  >
+                    {loc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Parent directory button */}
+            {browserDirsData?.parent && (
+              <button
+                onClick={() => handleOpenDirBrowser(browserDirsData.parent)}
+                className="w-full p-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 text-xs font-bold flex items-center gap-2 border border-slate-800 transition-colors"
+              >
+                <FolderUp className="w-4 h-4 text-purple-400" />
+                <span>.. Torna alla cartella superiore ({browserDirsData.parent})</span>
+              </button>
+            )}
+
+            {/* Subdirectories List */}
+            <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[350px] p-2 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1">
+              {isBrowsingDirs ? (
+                <div className="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                  <span>Lettura directory del computer...</span>
+                </div>
+              ) : browserDirsData?.subdirectories?.length > 0 ? (
+                browserDirsData.subdirectories.map((dir) => (
+                  <div
+                    key={dir.path}
+                    className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-900 text-slate-200 text-xs group transition-colors"
+                  >
+                    <div
+                      onClick={() => handleOpenDirBrowser(dir.path)}
+                      className="flex items-center gap-2 flex-1 cursor-pointer truncate"
+                    >
+                      <Folder className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="truncate group-hover:text-purple-300 font-medium">{dir.name}</span>
+                    </div>
+
+                    <button
+                      onClick={() => handleSelectBrowserDir(dir.path)}
+                      className="px-3 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600 text-purple-200 hover:text-white border border-purple-500/40 text-[11px] font-bold transition-all shrink-0 ml-2"
+                    >
+                      Seleziona Questa
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-slate-500 text-xs">
+                  Nessuna sottocartella trovata in questo percorso.
+                </div>
+              )}
+            </div>
+
+            {/* Footer confirmation */}
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <button
+                onClick={() => setIsDirBrowserOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Chiudi
+              </button>
+
+              {browserDirsData?.current && (
+                <button
+                  onClick={() => handleSelectBrowserDir(browserDirsData.current)}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95 text-white text-xs font-bold shadow-lg shadow-purple-500/30 transition-all flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Imposta "{browserDirsData.current.split('\\').pop() || browserDirsData.current}" come Cartella di Lavoro</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
