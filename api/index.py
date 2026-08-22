@@ -45,48 +45,49 @@ class InferenceChatRequest(BaseModel):
 class SaveKeyRequest(BaseModel):
     api_key: str
 
+class ScrapeUrlRequest(BaseModel):
+    url: str
+    max_chars: Optional[int] = 8000
+
 # In-memory storage for serverless session
 _OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 # --- Helper Functions ---
-async def search_duckduckgo_lite(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+async def search_duckduckgo_lite(query: str, max_results: int = 8) -> List[Dict[str, str]]:
     url = "https://html.duckduckgo.com/html/"
     headers = {
-        "User-Agent": USER_AGENT,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": "https://html.duckduckgo.com/"
     }
     data = {"q": query, "b": ""}
     results = []
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             resp = await client.post(url, headers=headers, data=data)
             if resp.status_code == 200:
                 html = resp.text
-                blocks = re.findall(r'<div class="result results_links results_links_deep web-result ">([\s\S]*?)</div>\s*</div>', html)
-                for block in blocks[:max_results]:
-                    snippet_match = re.search(r'<a class="result__snippet"[^>]*>([\s\S]*?)</a>', block)
-                    raw_url = ""
-                    title = ""
-                    snippet = ""
-                    t_m = re.search(r'<h2 class="result__title">[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>', block)
+                blocks = re.findall(r'(<div[^>]*class="[^"]*results_links[^"]*"[\s\S]*?)(?=<div[^>]*class="[^"]*results_links[^"]*"|<div[^>]*class="nav-link"|$)', html)
+                for b in blocks[:max_results]:
+                    t_m = re.search(r'<h2[^>]*class="result__title"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>', b)
+                    s_m = re.search(r'<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)</a>', b)
                     if t_m:
                         raw_url = t_m.group(1)
-                        title = re.sub(r'<[^>]+>', '', t_m.group(2)).strip()
-                    if snippet_match:
-                        snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip()
-                    if "uddg=" in raw_url:
-                        m = re.search(r'uddg=([^&]+)', raw_url)
-                        if m:
-                            raw_url = urllib.parse.unquote(m.group(1))
-                    if title:
-                        results.append({
-                            "title": title,
-                            "snippet": snippet,
-                            "url": raw_url,
-                            "source": "DuckDuckGo Web"
-                        })
-    except Exception:
+                        raw_title = t_m.group(2)
+                        title = re.sub(r'<[^>]+>', '', raw_title).strip()
+                        snippet = re.sub(r'<[^>]+>', '', s_m.group(1)).strip() if s_m else ''
+                        if 'uddg=' in raw_url:
+                            m = re.search(r'uddg=([^&]+)', raw_url)
+                            if m:
+                                raw_url = urllib.parse.unquote(m.group(1))
+                        if title and raw_url:
+                            results.append({
+                                "title": title,
+                                "snippet": snippet,
+                                "url": raw_url,
+                                "source": "DuckDuckGo Web"
+                            })
+    except Exception as e:
         pass
     return results
 
@@ -117,7 +118,40 @@ async def search_wikipedia(query: str, max_results: int = 2) -> List[Dict[str, s
             break
     return results
 
-async def perform_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+async def scrape_web_page(url: str, max_chars: int = 8000) -> Dict[str, Any]:
+    if not url or not url.startswith("http"):
+        return {"success": False, "error": "URL non valido", "url": url}
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                html = resp.text
+                # Remove scripts, styles, etc.
+                clean_html = re.sub(r'<(script|style|noscript|nav|header|footer|svg)[\s\S]*?</\1>', '', html, flags=re.IGNORECASE)
+                title_m = re.search(r'<title[^>]*>([\s\S]*?)</title>', clean_html, re.IGNORECASE)
+                title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip() if title_m else url
+
+                # Extract text
+                text = re.sub(r'<[^>]+>', ' ', clean_html)
+                text = re.sub(r'\s+', ' ', text).strip()
+                extracted = text[:max_chars]
+                return {
+                    "success": True,
+                    "url": url,
+                    "title": title,
+                    "content": extracted,
+                    "word_count": len(extracted.split()),
+                    "method": "Backend HTML Scraper"
+                }
+    except Exception as e:
+        return {"success": False, "error": str(e), "url": url}
+    return {"success": False, "error": "Impossibile scaricare la pagina", "url": url}
+
+async def perform_web_search(query: str, max_results: int = 6) -> Dict[str, Any]:
     if not query or not query.strip():
         return {"query": query, "results": [], "summary_text": "Nessuna ricerca richiesta."}
     
@@ -218,6 +252,10 @@ async def save_openrouter_key(req: SaveKeyRequest):
 @app.post("/api/agent/web-search")
 async def agent_web_search(req: AgentSearchRequest):
     return await perform_web_search(req.query, max_results=req.max_results)
+
+@app.post("/api/agent/scrape-url")
+async def agent_scrape_url(req: ScrapeUrlRequest):
+    return await scrape_web_page(req.url, max_chars=req.max_chars or 8000)
 
 @app.post("/api/agent/analyze-prompt")
 async def agent_analyze_prompt(req: AgentAnalyzeRequest):
