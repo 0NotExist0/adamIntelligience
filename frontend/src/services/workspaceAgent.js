@@ -171,7 +171,7 @@ export const runWorkspaceCommand = async (folderPath, command, timeoutSeconds = 
   }
 };
 
-import { sendOpenRouterChat } from './openrouter';
+import { sendOpenRouterChat, getOpenRouterKey } from './openrouter';
 
 let activeDirectoryHandle = null;
 
@@ -429,9 +429,19 @@ export const runWorkspaceAgentTask = async ({
   messages = [],
   model = 'openrouter/free',
   maxIterations = 5,
-  dirHandle = null
+  dirHandle = null,
+  apiKey = null
 }) => {
   const currentHandle = dirHandle || activeDirectoryHandle;
+  const activeKey = (apiKey || getOpenRouterKey() || '').trim();
+
+  if (!activeKey) {
+    return {
+      success: false,
+      error: 'Chiave API OpenRouter mancante! Inserisci una chiave API (gratuita su openrouter.ai/keys) per far generare risposte all\'Agente AI.',
+      content: '⚠️ **Chiave API OpenRouter mancante!**\n\nPer far operare l\'Agente AI su Vercel, inserisci la tua chiave API gratuita (ottenibile gratis in 10 secondi su [openrouter.ai/keys](https://openrouter.ai/keys)) nella sezione in alto o nelle Impostazioni.'
+    };
+  }
   
   // If we have a browser directory handle (Vercel Mode), run client-side agent
   if (currentHandle) {
@@ -441,7 +451,8 @@ export const runWorkspaceAgentTask = async ({
       taskPrompt,
       messages,
       model,
-      maxIterations
+      maxIterations,
+      apiKey: activeKey
     });
   }
 
@@ -452,18 +463,34 @@ export const runWorkspaceAgentTask = async ({
       task_prompt: taskPrompt,
       messages: messages,
       model: model,
-      max_iterations: maxIterations
+      max_iterations: maxIterations,
+      api_key: activeKey
+    }, {
+      headers: { Authorization: `Bearer ${activeKey}` }
     });
-    return res.data;
-  } catch (err) {
-    // If backend 404/fails on Vercel, fallback to client-side runner
+    if (res.data && res.data.success) {
+      return res.data;
+    }
+    // If backend returned error, fallback to browser runner
     return runBrowserWorkspaceAgentTask({
       dirHandle: currentHandle,
       folderPath,
       taskPrompt,
       messages,
       model,
-      maxIterations
+      maxIterations,
+      apiKey: activeKey
+    });
+  } catch (err) {
+    // If backend 404/500 on Vercel, fallback to client-side runner
+    return runBrowserWorkspaceAgentTask({
+      dirHandle: currentHandle,
+      folderPath,
+      taskPrompt,
+      messages,
+      model,
+      maxIterations,
+      apiKey: activeKey
     });
   }
 };

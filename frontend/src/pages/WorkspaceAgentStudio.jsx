@@ -34,7 +34,8 @@ import {
   AlertCircle,
   X,
   HardDrive,
-  FolderUp
+  FolderUp,
+  Key
 } from 'lucide-react';
 import { 
   getWorkspaceInfo, 
@@ -61,7 +62,7 @@ import {
   writeFileToDirectoryHandle,
   deleteFileFromDirectoryHandle
 } from '../services/workspaceAgent';
-import { POPULAR_MODELS } from '../services/openrouter';
+import { POPULAR_MODELS, getOpenRouterKey, setOpenRouterKey } from '../services/openrouter';
 import { useToast } from '../components/Toast';
 
 export default function WorkspaceAgentStudio() {
@@ -110,6 +111,22 @@ export default function WorkspaceAgentStudio() {
   const [loading, setLoading] = useState(false);
   const [currentStepLabel, setCurrentStepLabel] = useState('');
   const [copiedIndex, setCopiedIndex] = useState(null);
+
+  // OpenRouter API Key state
+  const [userApiKey, setUserApiKey] = useState(() => getOpenRouterKey());
+  const [inlineKeyInput, setInlineKeyInput] = useState('');
+  const [isKeyInputOpen, setIsKeyInputOpen] = useState(false);
+
+  const handleSaveInlineKey = (e) => {
+    e.preventDefault();
+    const key = inlineKeyInput.trim();
+    if (!key) return;
+    setOpenRouterKey(key);
+    setUserApiKey(key);
+    setInlineKeyInput('');
+    setIsKeyInputOpen(false);
+    addToast('Chiave API OpenRouter salvata con successo!', 'success');
+  };
 
   const messagesEndRef = useRef(null);
   const terminalEndRef = useRef(null);
@@ -608,6 +625,19 @@ export default function WorkspaceAgentStudio() {
           {/* Action Buttons: Native Windows Dialog & Browser */}
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={() => setIsKeyInputOpen(!isKeyInputOpen)}
+              className={`px-3 py-2.5 rounded-2xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow ${
+                userApiKey 
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/40'
+                  : 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse hover:bg-amber-500/30'
+              }`}
+              title={userApiKey ? 'Chiave OpenRouter Attiva' : 'Inserisci Chiave OpenRouter'}
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{userApiKey ? 'Chiave AI Attiva' : 'Inserisci Chiave API'}</span>
+            </button>
+
+            <button
               onClick={handleOpenNativeFolderDialog}
               disabled={isLoadingTree}
               className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:opacity-95 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-500/30 active:scale-95 transition-all"
@@ -624,6 +654,36 @@ export default function WorkspaceAgentStudio() {
             </button>
           </div>
         </div>
+
+        {/* Inline API Key Input Banner (if missing or opened) */}
+        {(!userApiKey || isKeyInputOpen) && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-purple-950/40 to-slate-950/60 border border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200 shadow-lg">
+            <div className="flex items-center gap-2.5 text-xs text-amber-200">
+              <Key className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                {userApiKey 
+                  ? 'Chiave API OpenRouter attualmente impostata. Incollane una nuova per cambiarla:' 
+                  : 'Per consentire all\'Agente AI di rispondere su Vercel, inserisci la tua chiave API gratuita (da openrouter.ai/keys):'}
+              </span>
+            </div>
+
+            <form onSubmit={handleSaveInlineKey} className="w-full sm:w-auto flex items-center gap-2">
+              <input
+                type="password"
+                value={inlineKeyInput}
+                onChange={(e) => setInlineKeyInput(e.target.value)}
+                placeholder="sk-or-v1-..."
+                className="flex-1 sm:w-64 bg-slate-900 border border-amber-500/50 rounded-xl px-3 py-1.5 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all shrink-0"
+              >
+                Salva Chiave
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Folder Path Input & Quick Shortcuts Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-slate-800/80">

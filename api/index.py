@@ -186,25 +186,26 @@ async def perform_web_search(query: str, max_results: int = 6) -> Dict[str, Any]
         "summary_text": summary_text
     }
 
-async def call_openrouter(messages: List[Dict[str, str]], model: str, temperature: float = 0.7, max_tokens: int = 1024) -> Dict[str, Any]:
+async def call_openrouter(
+    messages: List[Dict[str, str]], 
+    model: str, 
+    temperature: float = 0.7, 
+    max_tokens: int = 1024,
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
+    active_key = (api_key or _OPENROUTER_API_KEY).strip()
     headers = {
         "Content-Type": "application/json",
         "HTTP-Referer": "https://aistudio.vercel.app",
         "X-Title": "AI Studio Pro Vercel"
     }
-    if _OPENROUTER_API_KEY:
-        headers["Authorization"] = f"Bearer {_OPENROUTER_API_KEY}"
-    
-    target_model = model
-    if any(k in target_model for k in ["llama-3.3-70b-instruct:free", "gemini-flash-1.5-8b:free", "gemini-2.0-flash-exp:free"]):
-        target_model = "openrouter/free"
-
-    payload = {
-        "model": target_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
+    if active_key:
+        headers["Authorization"] = f"Bearer {active_key}"
+    else:
+        return {
+            "success": False,
+            "error": "Chiave API OpenRouter mancante! Inserisci la tua chiave API (gratuita su openrouter.ai/keys) nelle Impostazioni o nella barra superiore."
+        }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
@@ -362,6 +363,7 @@ class WorkspaceAgentTaskRequest(BaseModel):
     messages: Optional[List[Dict[str, Any]]] = None
     model: str = "openrouter/free"
     max_iterations: Optional[int] = 5
+    api_key: Optional[str] = None
 
 class WorkspaceBrowseNativeRequest(BaseModel):
     initial_dir: Optional[str] = None
@@ -439,7 +441,8 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
         messages=conv,
         model=req.model or "openrouter/free",
         temperature=0.2,
-        max_tokens=4096
+        max_tokens=4096,
+        api_key=req.api_key
     )
     
     content = llm_res.get("content", "")
