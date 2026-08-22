@@ -444,15 +444,20 @@ export default function WorkspaceAgentStudio() {
       return;
     }
 
-    // If running in web/serverless mode without handle, prompt user to select the folder for direct PC write
-    const currentHandle = getActiveDirectoryHandle();
-    if (!currentHandle && typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+    // Verify/acquire handle with direct user gesture context for Chrome File System Access API
+    let currentHandle = getActiveDirectoryHandle();
+    if (currentHandle) {
+      try {
+        await verifyAndRequestPermission(currentHandle, true);
+      } catch (e) {}
+    } else if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
       try {
         const info = await getWorkspaceInfo();
         if (info && info.is_serverless) {
-          addToast('Seleziona la cartella dal popup per salvare i file direttamente sul tuo PC!', 'info');
+          addToast('Seleziona la cartella dal popup per autorizzare il salvataggio sul tuo PC!', 'info');
           const pickRes = await pickDirectoryNative();
           if (pickRes.success && pickRes.handle) {
+            currentHandle = pickRes.handle;
             setFolderPath(pickRes.name);
             const tree = await buildTreeFromDirectoryHandle(pickRes.handle);
             setFileTree(tree);

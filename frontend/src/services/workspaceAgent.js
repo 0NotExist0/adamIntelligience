@@ -992,7 +992,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
         finalAnswer = lastResponse;
         interactiveOptions = options;
       } else if (call.name === 'write_file') {
-        const { path, content } = extractWriteArgs(call.rawArgs);
+        const { path, content } = extractWriteArgs(call.rawArgs, folderPath, currentHandle?.name);
         generatedFiles.push({ path, content });
         const diskRes = await writeFileToDisk(path, content);
         output = diskRes.output;
@@ -1010,13 +1010,13 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
           output = `Errore comando: ${e.message}`;
         }
       } else if (call.name === 'read_file') {
-        const path = extractPathArg(call.rawArgs);
+        const path = extractPathArg(call.rawArgs, folderPath, currentHandle?.name);
         let readContent = null;
         if (folderPath) {
           for (const url of ['/api/workspace/file-content', 'http://127.0.0.1:8000/api/workspace/file-content']) {
             try {
               const res = await axios.get(url, { params: { folder_path: folderPath, relative_path: path }, timeout: 5000 });
-              if (res.data && res.data.success) {
+              if (res.data && res.data.success && !res.data.is_serverless) {
                 readContent = res.data.content;
                 break;
               }
@@ -1034,7 +1034,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
           for (const url of ['/api/workspace/tree', 'http://127.0.0.1:8000/api/workspace/tree']) {
             try {
               const res = await axios.get(url, { params: { folder_path: folderPath }, timeout: 5000 });
-              if (res.data && res.data.tree) {
+              if (res.data && res.data.tree && !res.data.is_serverless) {
                 const traverse = (items, pfx = '') => {
                   for (const item of items) {
                     const itemPath = pfx ? `${pfx}/${item.name}` : item.name;
@@ -1067,13 +1067,13 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
         }
         output = fileList.length > 0 ? `File presenti nella cartella:\n${fileList.map((f) => `- ${f}`).join('\n')}` : 'Nessun file trovato nella cartella.';
       } else if (call.name === 'edit_file') {
-        const { path, target, replacement } = extractEditArgs(call.rawArgs);
+        const { path, target, replacement } = extractEditArgs(call.rawArgs, folderPath, currentHandle?.name);
         let origContent = null;
         if (folderPath) {
           for (const url of ['/api/workspace/file-content', 'http://127.0.0.1:8000/api/workspace/file-content']) {
             try {
               const res = await axios.get(url, { params: { folder_path: folderPath, relative_path: path }, timeout: 5000 });
-              if (res.data && res.data.success) {
+              if (res.data && res.data.success && !res.data.is_serverless) {
                 origContent = res.data.content;
                 break;
               }
@@ -1093,13 +1093,13 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
           output = `Impossibile modificare '${path}': file non trovato.`;
         }
       } else if (call.name === 'delete_file') {
-        const path = extractPathArg(call.rawArgs);
+        const path = extractPathArg(call.rawArgs, folderPath, currentHandle?.name);
         let deleted = false;
         if (folderPath) {
           for (const url of ['/api/workspace/delete-file', 'http://127.0.0.1:8000/api/workspace/delete-file']) {
             try {
               const res = await axios.post(url, { folder_path: folderPath, relative_path: path }, { timeout: 5000 });
-              if (res.data && res.data.success) {
+              if (res.data && res.data.success && !res.data.is_serverless) {
                 deleted = true;
                 output = `File '${path}' eliminato con successo dal disco.`;
                 break;
