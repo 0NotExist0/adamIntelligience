@@ -377,6 +377,167 @@ export const downloadFileDirectly = (fileName, content) => {
   }
 };
 
+// Multi-format robust tool call parser supporting all model conventions:
+// [list_files()], [tool call: list_files()], [tool: list_files()], ```tool\nlist_files()\n```, Action: list_files, etc.
+export const parseModelToolCalls = (text) => {
+  if (!text) return [];
+  const calls = [];
+  
+  // 1. Bracket format with optional prefixes: [tool call: list_files(...)], [call: list_files(...)], [tool: list_files(...)], [list_files(...)]
+  const bracketRegex = /(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?/gi;
+  let match;
+  while ((match = bracketRegex.exec(text)) !== null) {
+    calls.push({
+      name: match[1].toLowerCase(),
+      rawArgs: (match[2] || match[3] || '').trim()
+    });
+  }
+
+  // 2. Code block format: ```tool\nlist_files()\n``` or ```json\n{"tool": "list_files", ...}\n```
+  if (!calls.length) {
+    const codeBlockRegex = /```(?:tool|tool_call|json|python)?\s*[\r\n]+([\s\S]*?)```/gi;
+    let cbMatch;
+    while ((cbMatch = codeBlockRegex.exec(text)) !== null) {
+      const inner = cbMatch[1].trim();
+      const fnMatch = /(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])/i.exec(inner);
+      if (fnMatch) {
+        calls.push({
+          name: fnMatch[1].toLowerCase(),
+          rawArgs: (fnMatch[2] || fnMatch[3] || '').trim()
+        });
+      } else {
+        try {
+          const parsedJson = JSON.parse(inner);
+          if (parsedJson.name || parsedJson.tool || parsedJson.action) {
+            const name = (parsedJson.name || parsedJson.tool || parsedJson.action || '').toLowerCase();
+            const argsObj = parsedJson.arguments || parsedJson.args || parsedJson.parameters || {};
+            let argStr = '';
+            if (typeof argsObj === 'string') {
+              argStr = argsObj;
+            } else {
+              argStr = Object.entries(argsObj).map(([k, v]) => `${k}="${v}"`).join(', ');
+            }
+            calls.push({ name, rawArgs: argStr });
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  // 3. Unbracketed ReAct format: "tool call: list_files()" or "Action: list_files"
+  if (!calls.length) {
+    const unbracketedRegex = /(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|ask_user)(?:\s*\(([\s\S]*?)\)|\s*:\s*([\s\S]*?))?(?=\n\n|\n[A-Z]|$)/gi;
+    let ubMatch;
+    while ((ubMatch = unbracketedRegex.exec(text)) !== null) {
+      calls.push({
+        name: ubMatch[1].toLowerCase(),
+        rawArgs: (ubMatch[2] || ubMatch[3] || '').trim()
+      });
+    }
+  }
+
+  return calls;
+};
+
+export const cleanModelOutput = (text) => {
+  if (!text) return '';
+  let cleaned = text;
+  cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '');
+  cleaned = cleaned.replace(/\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\([\s\S]*?\)|\[[\s\S]*?\])?\s*\]/gi, '');
+  cleaned = cleaned.replace(/```(?:tool|tool_call)\s*[\r\n]+[\s\S]*?```/gi, '');
+  cleaned = cleaned.replace(/(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|delete_file|ask_user)[\s\S]*?(?=\n\n|$)/gi, '');
+  return cleaned.trim();
+};
+
+export const extractPathArg = (rawArgs) => {
+  if (!rawArgs) return '';
+  const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
+  if (pathMatch) return pathMatch[1].trim();
+  const quoteMatch = /["']([^"']+)["']/.exec(rawArgs);
+  if (quoteMatch) return quoteMatch[1].trim();
+  return rawArgs.replace(/[()]/g, '').trim();
+};
+
+export const extractWriteArgs = (rawArgs) => {
+  let path = 'nuovo_file.txt';
+  let content = '';
+  const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
+  if (pathMatch) {
+    path = pathMatch[1].trim();
+  }
+  const contentMatch = /content\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
+  if (contentMatch) {
+    content = contentMatch[1] ?? contentMatch[2] ?? contentMatch[3] ?? contentMatch[4] ?? '';
+  } else {
+    const splitIdx = rawArgs.indexOf('content=');
+    if (splitIdx !== -1) {
+      content = rawArgs.slice(splitIdx + 8).trim().replace(/^["']|["']$/g, '');
+    }
+  }
+  return { path, content };
+};
+
+export const extractEditArgs = (rawArgs) => {
+  let path = '';
+  let target = '';
+  let replacement = '';
+  const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(rawArgs);
+  if (pathMatch) path = pathMatch[1].trim();
+  const targetMatch = /target\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
+  if (targetMatch) target = targetMatch[1] ?? targetMatch[2] ?? targetMatch[3] ?? targetMatch[4] ?? '';
+  const replMatch = /replacement\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
+  if (replMatch) replacement = replMatch[1] ?? replMatch[2] ?? replMatch[3] ?? replMatch[4] ?? '';
+  return { path, target, replacement };
+};
+
+export const extractQuestionAndOptions = (rawArgs, fullText = '') => {
+  let question = 'Come desideri procedere con questo task?';
+  let options = [];
+
+  if (rawArgs) {
+    const qMatch = /question\s*=\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(rawArgs);
+    if (qMatch) {
+      question = (qMatch[1] ?? qMatch[2] ?? qMatch[3] ?? qMatch[4] ?? '').trim();
+    } else {
+      const firstPart = rawArgs.split('options=')[0];
+      if (firstPart && firstPart.trim()) {
+        question = firstPart.replace(/^["']|["']$/g, '').trim();
+      }
+    }
+
+    // Parse options array: options=["...", "..."]
+    const optArrayMatch = /options\s*=\s*\[([\s\S]*?)\]/i.exec(rawArgs);
+    if (optArrayMatch) {
+      const items = optArrayMatch[1].match(/(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"([\s\S]*?)"|'([\s\S]*?)')/g);
+      if (items) {
+        options = items.map((it) => it.replace(/^["']|["']$/g, '').trim()).filter(Boolean);
+      }
+    }
+  }
+
+  // Extract from full text if not present in options param
+  if (!options.length && fullText) {
+    const lines = fullText.split('\n');
+    for (const line of lines) {
+      const bulletMatch = /^\s*(?:\d+[\.\)]|[-*•])\s*(?:Option\s*\w+:|Opzione\s*\w+:)?\s*(.+)$/i.exec(line);
+      if (bulletMatch && bulletMatch[1] && bulletMatch[1].length > 3 && bulletMatch[1].length < 150) {
+        options.push(bulletMatch[1].trim().replace(/^\*\*|\*\*$/g, ''));
+      }
+    }
+  }
+
+  if (!options.length) {
+    options = [
+      'Crea una Web App interattiva (HTML + CSS + JavaScript)',
+      'Crea uno script Python completo con interfaccia grafica',
+      'Crea un\'applicazione React con Tailwind CSS',
+      'Pianifica i requisiti e l\'architettura in un file README.md'
+    ];
+  }
+
+  return { question, options: options.slice(0, 4) };
+};
+
 /**
  * Client-Side Browser Workspace AI Agent Task Runner (for Vercel & Web)
  */
@@ -427,19 +588,20 @@ Il tuo obiettivo è operare DIRETTAMENTE sui file della cartella di lavoro (${cl
 📁 STATO ATTUALE DEI FILE NELLA CARTELLA:
 ${existingFilesSummary}
 
-TOOL A DISPOSIZIONE:
-1. [list_files()] -> Elenca i file della cartella
-2. [read_file(path="nome_file.ext")] -> Legge il contenuto completo del file
-3. [write_file(path="nome_file.ext", content="...")] -> Crea o sovrascrive un file direttamente sul disco del PC dell'utente
-4. [edit_file(path="nome_file.ext", target="vecchio", replacement="nuovo")] -> Modifica una parte del file
-5. [delete_file(path="nome_file.ext")] -> Elimina un file
-6. [ask_user(question="...")] -> Se non sai come andare avanti, la richiesta è ambigua, mancano requisiti o decisioni tecniche, FERMATI ed usa questo tool per fare domande all'utente.
+TOOL A DISPOSIZIONE (Usa ESATTAMENTE questa sintassi tra parentesi quadre):
+- [list_files()] -> Elenca i file della cartella
+- [read_file(path="nome_file.ext")] -> Legge il contenuto completo del file
+- [write_file(path="nome_file.ext", content="...")] -> Crea o sovrascrive un file direttamente sul disco del PC dell'utente
+- [edit_file(path="nome_file.ext", target="vecchio", replacement="nuovo")] -> Modifica una parte del file
+- [delete_file(path="nome_file.ext")] -> Elimina un file
+- [ask_user(question="...", options=["Opzione 1", "Opzione 2", "Opzione 3", "Opzione 4"])] -> Se la richiesta è aperta, ambigua o mancano dettagli su tecnologie/framework, FERMATI ed elenca 3 o 4 opzioni chiare e concrete che l'utente potrà cliccare con un pulsante!
 
-🛑 REGOLA FONDAMENTALE DI AUTONOMIA E CHIARIMENTO:
-Se non sai come andare avanti, mancano file necessari o la richiesta è aperta/ambigua, NON INVENTARE E NON PROCEDERE ALLA CIECA.
-FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...")] oppure poni chiaramente all'utente le tue domande e le opzioni consigliate per sbloccare il task.
+🛑 REGOLA FONDAMENTALE DI AUTONOMIA, DOMANDE & OPZIONI (STILE CLAUDE):
+Se non sai come andare avanti, o la richiesta dell'utente (es. "scrivi un'app...") richiede di scegliere tecnologia, librerie o funzionalità:
+FERMATI IMMEDIATAMENTE ed usa [ask_user(question="...", options=["Opzione A", "Opzione B", "Opzione C", "Opzione D"])].
+Formula sempre domande chiare in italiano e fornisci opzioni cliccabili azionabili.
 
-Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|>[tool_name(...)]<|tool_call_end|>. Formula spiegazioni chiare in italiano.`;
+Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni chiare in italiano.`;
 
   const conversation = [
     { role: 'system', content: systemPrompt },
@@ -509,14 +671,16 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
 
     const toolObservations = [];
     let stopRequested = false;
+    let interactiveOptions = [];
 
     for (const call of toolCalls) {
       let output = '';
       if (call.name === 'ask_user') {
-        const question = extractQuestionArg(call.rawArgs);
+        const { question, options } = extractQuestionAndOptions(call.rawArgs, lastResponse);
         output = `Domanda rivolta all'utente: ${question}`;
         stopRequested = true;
         finalAnswer = lastResponse;
+        interactiveOptions = options;
       } else if (call.name === 'write_file') {
         const { path, content } = extractWriteArgs(call.rawArgs);
         generatedFiles.push({ path, content });
@@ -606,6 +770,14 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
 
   let cleaned = cleanModelOutput(finalAnswer || lastResponse);
 
+  // If interactive options weren't explicitly extracted from ask_user, check if text has questions/options
+  if (!interactiveOptions.length && (cleaned.includes('?') || cleaned.toLowerCase().includes('opzion') || cleaned.toLowerCase().includes('come preferisci') || cleaned.toLowerCase().includes('cosa vorresti'))) {
+    const { options } = extractQuestionAndOptions('', cleaned);
+    if (options.length > 1) {
+      interactiveOptions = options;
+    }
+  }
+
   return {
     success: true,
     content: cleaned,
@@ -614,6 +786,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     steps: stepsExecuted,
     steps_count: stepsExecuted.length,
     generatedFiles: generatedFiles,
+    options: interactiveOptions,
     model,
     iterations: iteration
   };

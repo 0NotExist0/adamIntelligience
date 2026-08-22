@@ -109,7 +109,13 @@ export default function WorkspaceAgentStudio() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '👋 Ciao! Sono il tuo **Agente AI di Workspace**.\n\nSpecificando una **cartella di lavoro** qui sopra, posso:\n- 📂 **Esplorare e mappare i file** del tuo progetto\n- 🔍 **Leggere e analizzare** codice sorgente e documentazione\n- ✍️ **Creare o modificare file** di codice in totale autonomia\n- 💻 **Eseguire comandi da terminale** (test, build, linter, git)\n- 💾 **Salvare la cronologia completa delle chat** e riprenderla quando vuoi!\n\nInserisci un percorso cartella o seleziona una delle cartelle rapide per iniziare.',
+      content: '👋 Ciao! Sono il tuo **Agente AI di Workspace**.\n\nSpecificando una **cartella di lavoro** qui sopra, posso creare app, analizzare codice e gestire file direttamente sul tuo computer.\n\nCosa vorresti realizzare adesso?',
+      options: [
+        'Analizza la struttura del progetto e descrivi i file',
+        'Crea una Web App interattiva in HTML, CSS e JavaScript',
+        'Crea un\'applicazione Python con interfaccia grafica',
+        'Trova potenziali bug o problemi di codice'
+      ],
       agentTrace: null
     }
   ]);
@@ -505,6 +511,7 @@ export default function WorkspaceAgentStudio() {
           role: 'assistant',
           content: agentRes.content,
           reasoning: agentRes.reasoning || '',
+          options: agentRes.options || [],
           isStreaming: false,
           agentTrace: {
             steps: agentRes.steps || [],
@@ -1150,6 +1157,37 @@ export default function WorkspaceAgentStudio() {
                         <span className="inline-block w-2 h-3.5 bg-purple-400 ml-1 animate-pulse align-middle" />
                       )}
                     </div>
+
+                    {/* Claude-Style Interactive Quick Option Buttons */}
+                    {!isUser && msg.options && msg.options.length > 0 && (
+                      <div className="mt-3.5 pt-3 border-t border-purple-500/20 space-y-2.5">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-purple-300">
+                          <div className="flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Seleziona una delle opzioni per proseguire:</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-normal">Click rapido</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {msg.options.map((opt, optIdx) => (
+                            <button
+                              key={optIdx}
+                              onClick={() => handleSendTask(opt)}
+                              disabled={loading}
+                              className="p-2.5 px-3 rounded-xl bg-purple-950/40 hover:bg-purple-600/30 text-purple-100 hover:text-white border border-purple-500/30 hover:border-purple-400/60 text-left text-xs font-medium transition-all shadow flex items-start gap-2.5 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="w-5 h-5 rounded-lg bg-purple-600/30 group-hover:bg-purple-500 text-purple-300 group-hover:text-white text-[11px] font-bold flex items-center justify-center shrink-0 transition-colors border border-purple-500/40">
+                                {optIdx + 1}
+                              </span>
+                              <span className="leading-snug flex-1">{opt}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-[10px] text-slate-400 italic flex items-center gap-1">
+                          <span>💡 Oppure scrivi un'istruzione alternativa nel box in basso.</span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Agent Trace Badge & Steps Inspector */}
                     {!isUser && msg.agentTrace?.steps?.length > 0 && (
