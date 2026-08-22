@@ -53,7 +53,13 @@ import {
   exportChatSessionAsMarkdown,
   pickDirectoryNative,
   browseNativeOSFolder,
-  browseLocalDirectories
+  browseLocalDirectories,
+  getActiveDirectoryHandle,
+  setActiveDirectoryHandle,
+  buildTreeFromDirectoryHandle,
+  readFileFromDirectoryHandle,
+  writeFileToDirectoryHandle,
+  deleteFileFromDirectoryHandle
 } from '../services/workspaceAgent';
 import { POPULAR_MODELS } from '../services/openrouter';
 import { useToast } from '../components/Toast';
@@ -166,14 +172,35 @@ export default function WorkspaceAgentStudio() {
 
   const handleOpenNativeFolderDialog = async () => {
     setIsLoadingTree(true);
-    addToast('Apertura finestra di selezione cartella sul tuo computer...', 'info');
+    // On Web / Vercel: use browser File System Access API for direct local PC disk read/write
+    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      try {
+        const res = await pickDirectoryNative();
+        if (res.success && res.handle) {
+          setFolderPath(res.name);
+          const tree = await buildTreeFromDirectoryHandle(res.handle);
+          setFileTree(tree);
+          setExpandedFolders({ [res.name]: true });
+          addToast(`Cartella "${res.name}" connessa con accesso diretto al disco!`, 'success');
+          appendTerminal('success', `[WORKSPACE]: Connesso a cartella locale "${res.name}" (Accesso Diretto Disco PC)`);
+          setIsLoadingTree(false);
+          return;
+        } else if (res.cancelled) {
+          setIsLoadingTree(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Browser directory picker skipped:', err);
+      }
+    }
+
+    // Otherwise fallback to backend dialog or directory browser
     try {
       const res = await browseNativeOSFolder(folderPath);
       if (!res.cancelled && res.success && res.folder_path) {
         setFolderPath(res.folder_path);
         await handleLoadFolder(res.folder_path);
       } else {
-        // If native dialog was cancelled or skipped, open visual directory browser directly
         handleOpenDirBrowser();
       }
     } catch (err) {
@@ -197,15 +224,6 @@ export default function WorkspaceAgentStudio() {
     await handleLoadFolder(path);
   };
 
-  const handleBrowseNative = async () => {
-    const res = await pickDirectoryNative();
-    if (res.success && res.name) {
-      addToast(`Cartella "${res.name}" selezionata dal browser`, 'info');
-    } else if (!res.cancelled) {
-      addToast('Usa la finestra nativa o digita il percorso della cartella sul computer', 'info');
-    }
-  };
-
   const toggleFolder = (path) => {
     setExpandedFolders((prev) => ({
       ...prev,
@@ -214,10 +232,22 @@ export default function WorkspaceAgentStudio() {
   };
 
   const handleSelectFile = async (filePath, relativePath) => {
-    if (!folderPath) return;
     setSelectedFile({ fullPath: filePath, relativePath });
     setRightTab('editor');
     
+    const activeHandle = getActiveDirectoryHandle();
+    if (activeHandle) {
+      const res = await readFileFromDirectoryHandle(activeHandle, relativePath);
+      if (res.success) {
+        setFileContent(res.content);
+        setIsEditingFile(false);
+      } else {
+        setFileContent(`// Errore lettura file: ${res.error}`);
+      }
+      return;
+    }
+
+    if (!folderPath) return;
     const res = await getWorkspaceFileContent(folderPath, relativePath);
     if (res.success) {
       setFileContent(res.content);
@@ -228,8 +258,27 @@ export default function WorkspaceAgentStudio() {
   };
 
   const handleSaveCurrentFile = async () => {
-    if (!selectedFile || !folderPath) return;
+    if (!selectedFile) return;
     setIsSavingFile(true);
+
+    const activeHandle = getActiveDirectoryHandle();
+    if (activeHandle) {
+      const res = await writeFileToDirectoryHandle(activeHandle, selectedFile.relativePath, fileContent);
+      if (res.success) {
+        addToast(`File ${selectedFile.relativePath} salvato su disco!`, 'success');
+        setIsEditingFile(false);
+        appendTerminal('success', `[FILE SALVATO]: ${selectedFile.relativePath}`);
+      } else {
+        addToast(`Errore salvataggio: ${res.error}`, 'error');
+      }
+      setIsSavingFile(false);
+      return;
+    }
+
+    if (!folderPath) {
+      setIsSavingFile(false);
+      return;
+    }
     const res = await saveWorkspaceFile(folderPath, selectedFile.relativePath, fileContent);
     if (res.success) {
       addToast(`File ${selectedFile.relativePath} salvato su disco!`, 'success');
@@ -242,9 +291,26 @@ export default function WorkspaceAgentStudio() {
   };
 
   const handleDeleteCurrentFile = async (relativePath) => {
-    if (!folderPath || !relativePath) return;
+    if (!relativePath) return;
     if (!confirm(`Sei sicuro di voler eliminare "${relativePath}"?`)) return;
 
+    const activeHandle = getActiveDirectoryHandle();
+    if (activeHandle) {
+      const res = await deleteFileFromDirectoryHandle(activeHandle, relativePath);
+      if (res.success) {
+        addToast(`File ${relativePath} eliminato`, 'info');
+        setSelectedFile(null);
+        setFileContent('');
+        const tree = await buildTreeFromDirectoryHandle(activeHandle);
+        setFileTree(tree);
+        appendTerminal('warning', `[FILE ELIMINATO]: ${relativePath}`);
+      } else {
+        addToast(`Errore: ${res.error}`, 'error');
+      }
+      return;
+    }
+
+    if (!folderPath) return;
     const res = await deleteWorkspaceFile(folderPath, relativePath);
     if (res.success) {
       addToast(`File ${relativePath} eliminato`, 'info');
@@ -327,8 +393,14 @@ export default function WorkspaceAgentStudio() {
             }
           });
           // Refresh file tree in case files were created/modified
-          const updatedTree = await getWorkspaceTree(folderPath);
-          setFileTree(updatedTree);
+          const activeHandle = getActiveDirectoryHandle();
+          if (activeHandle) {
+            const updatedTree = await buildTreeFromDirectoryHandle(activeHandle);
+            setFileTree(updatedTree);
+          } else {
+            const updatedTree = await getWorkspaceTree(folderPath);
+            setFileTree(updatedTree);
+          }
         }
 
         const assistantMessage = {
