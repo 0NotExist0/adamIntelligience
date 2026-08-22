@@ -617,6 +617,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
   let finalAnswer = '';
   let lastResponse = '';
   let finalReasoning = '';
+  let interactiveOptions = [];
 
   while (iteration < maxIterations) {
     iteration += 1;
@@ -671,7 +672,6 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)]. Formula spiegazioni
 
     const toolObservations = [];
     let stopRequested = false;
-    let interactiveOptions = [];
 
     for (const call of toolCalls) {
       let output = '';
