@@ -1,4 +1,4 @@
-import { multiMethodWebSearch } from './webSearch';
+import { multiMethodWebSearch, scrapeWebsiteContent } from './webSearch';
 import { getMemories } from './memory';
 
 // AI Studio Pro - Client-Side Autonomous Agent Tools Engine
@@ -6,11 +6,14 @@ import { getMemories } from './memory';
 export const AGENT_TOOLS_DEFINITIONS = `
 Disponi dei seguenti TOOL eseguibili per risolvere autonomamente le task dell'utente:
 1. web_search(query: string): Esegue una ricerca web multi-fonte (DuckDuckGo, Wikipedia, OpenAlex) in tempo reale.
-2. memory_search(category?: string): Consulta le regole e i fatti salvati nel Memory Vault dell'utente.
-3. current_time(): Restituisce la data e l'ora attuali esatte.
+2. explore_site(url: string): Esplora e legge il testo completo, gli orari, le tabelle e gli articoli pubblicati su uno specifico URL o sito web.
+3. memory_search(category?: string): Consulta le regole e i fatti salvati nel Memory Vault dell'utente.
+4. current_time(): Restituisce la data e l'ora attuali esatte.
 
 Se hai bisogno di informazioni esterne o verificare fatti, invoca il tool nel formato:
 <|tool_call_start|>[web_search(query="tua query di ricerca")]<|tool_call_end|>
+oppure per leggere un sito specifico:
+<|tool_call_start|>[explore_site(url="https://...")]<|tool_call_end|>
 oppure
 \`\`\`tool_call
 {"tool": "web_search", "query": "tua query"}
@@ -30,10 +33,12 @@ export const extractToolCalls = (text) => {
   let match;
   while ((match = toolCallStartRegex.exec(text)) !== null) {
     const rawCall = match[1].trim();
-    // parse [name(param="value")] or [name(query="...")]
-    const funcMatch = rawCall.match(/(\w+)\s*\(\s*(?:query\s*=\s*)?["']?([^"')\]]+)["']?\s*\)/);
+    // parse [name(param="value")] or [name(query="...")] or [explore_site(url="...")]
+    const funcMatch = rawCall.match(/(\w+)\s*\(\s*(?:query|url|param)?\s*=?\s*["']?([^"')\]]+)["']?\s*\)/);
     if (funcMatch) {
-      const name = funcMatch[1].toLowerCase() === 'google' ? 'web_search' : funcMatch[1];
+      let name = funcMatch[1].toLowerCase();
+      if (name === 'google') name = 'web_search';
+      if (name === 'read_url' || name === 'fetch_url') name = 'explore_site';
       calls.push({
         name,
         param: funcMatch[2].trim(),
@@ -48,9 +53,11 @@ export const extractToolCalls = (text) => {
     try {
       const parsed = JSON.parse(match[1]);
       if (parsed.tool || parsed.name) {
+        let name = (parsed.tool || parsed.name).toLowerCase();
+        if (name === 'read_url' || name === 'fetch_url') name = 'explore_site';
         calls.push({
-          name: parsed.tool || parsed.name,
-          param: parsed.query || parsed.param || JSON.stringify(parsed.args || {}),
+          name,
+          param: parsed.url || parsed.query || parsed.param || JSON.stringify(parsed.args || {}),
           raw: match[0]
         });
       }
@@ -59,12 +66,15 @@ export const extractToolCalls = (text) => {
     }
   }
 
-  // Pattern 3: [web_search(query="...")] or [google(query="...")] without tags
+  // Pattern 3: [web_search(query="...")] or [explore_site(url="...")] without tags
   if (calls.length === 0) {
-    const directRegex = /\[(google|web_search|search)\s*\(\s*(?:query\s*=\s*)?["']([^"']+)["']\s*\)\]/gi;
+    const directRegex = /\[(google|web_search|search|explore_site|read_url)\s*\(\s*(?:query|url)?\s*=?\s*["']([^"']+)["']\s*\)\]/gi;
     while ((match = directRegex.exec(text)) !== null) {
+      let name = match[1].toLowerCase();
+      if (name === 'google' || name === 'search') name = 'web_search';
+      if (name === 'read_url') name = 'explore_site';
       calls.push({
-        name: 'web_search',
+        name,
         param: match[2].trim(),
         raw: match[0]
       });
@@ -96,6 +106,18 @@ export const executeAgentTool = async (toolName, param) => {
         sources: searchRes.results || [],
         method: searchRes.method
       };
+    } else if (cleanName === 'explore_site' || cleanName === 'read_url' || cleanName === 'scrape') {
+      const scrapeRes = await scrapeWebsiteContent(param);
+      if (scrapeRes.success) {
+        output = `### 📄 CONTENUTO ESTRATTO DALLA PAGINA (${scrapeRes.url}):\n\n${scrapeRes.content}`;
+        metadata = {
+          url: scrapeRes.url,
+          wordCount: scrapeRes.wordCount,
+          method: scrapeRes.method
+        };
+      } else {
+        output = `Impossibile estrarre il testo da ${param}: ${scrapeRes.error}`;
+      }
     } else if (cleanName === 'memory_search' || cleanName === 'memory') {
       const memories = getMemories();
       const filtered = param 

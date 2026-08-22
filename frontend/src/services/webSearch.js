@@ -331,4 +331,120 @@ export const multiMethodWebSearch = async (query) => {
   };
 };
 
+/**
+ * Deep Website Explorer & Scraper Engine
+ * Reads and extracts full structured content from any URL
+ * Uses Jina Reader API + CORS DOM Parser + Wikipedia Extract
+ */
+export const scrapeWebsiteContent = async (url) => {
+  if (!url || !url.trim()) {
+    return { success: false, error: 'URL vuoto o non valido' };
+  }
+
+  const cleanUrl = url.trim();
+  const startTime = Date.now();
+  console.groupCollapsed(`%c🌐 [DEEP WEBSITE EXPLORER] Lettura URL: ${cleanUrl}`, 'color: #38bdf8; font-weight: bold; background: #0c4a6e; padding: 4px 8px; border-radius: 4px;');
+
+  // Method 1: Jina Reader API (free, returns clean Markdown for any webpage)
+  try {
+    const jinaUrl = `https://r.jina.ai/${cleanUrl}`;
+    const res = await axios.get(jinaUrl, { timeout: 8000 });
+    if (res.data && typeof res.data === 'string' && res.data.length > 50) {
+      const text = res.data.slice(0, 8000);
+      const words = text.split(/\s+/).length;
+      const durationMs = Date.now() - startTime;
+
+      console.log(`%cLettura completata tramite Jina Reader (${durationMs}ms, ${words} parole):`, 'color: #4ade80;');
+      console.log(text.slice(0, 300) + '...');
+      console.groupEnd();
+
+      return {
+        success: true,
+        method: 'Jina Deep Web Reader',
+        url: cleanUrl,
+        content: text,
+        wordCount: words,
+        durationMs
+      };
+    }
+  } catch (err) {
+    // try fallback
+  }
+
+  // Method 2: Wikipedia API Extract if it's a wikipedia page
+  if (cleanUrl.includes('wikipedia.org/wiki/')) {
+    try {
+      const title = decodeURIComponent(cleanUrl.split('/wiki/')[1]);
+      const lang = cleanUrl.includes('it.wikipedia') ? 'it' : 'en';
+      const wikiRes = await axios.get(
+        `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${title}&format=json&origin=*`,
+        { timeout: 5000 }
+      );
+      const pages = wikiRes.data?.query?.pages || {};
+      const page = Object.values(pages)[0];
+      if (page && page.extract) {
+        const durationMs = Date.now() - startTime;
+        console.log(`%cLettura completata tramite Wikipedia API (${durationMs}ms):`, 'color: #4ade80;');
+        console.groupEnd();
+        return {
+          success: true,
+          method: 'Wikipedia Direct Article Extract',
+          url: cleanUrl,
+          content: `### ${page.title}\n\n${page.extract}`,
+          wordCount: page.extract.split(/\s+/).length,
+          durationMs
+        };
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Method 3: CORS Proxy DOM Scraper
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}`;
+    const res = await axios.get(proxyUrl, { timeout: 7000 });
+    if (res.data && typeof res.data === 'string') {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(res.data, 'text/html');
+      
+      // Remove scripts, styles, navs
+      doc.querySelectorAll('script, style, noscript, nav, footer, header, svg').forEach(el => el.remove());
+      
+      const title = doc.querySelector('title')?.innerText || '';
+      const paragraphs = Array.from(doc.querySelectorAll('h1, h2, h3, p, li, table'))
+        .map(el => el.innerText.trim())
+        .filter(t => t.length > 20)
+        .join('\n\n');
+
+      if (paragraphs.length > 50) {
+        const text = `### ${title}\n\n${paragraphs.slice(0, 8000)}`;
+        const durationMs = Date.now() - startTime;
+        console.log(`%cLettura completata tramite CORS Proxy DOM Scraper (${durationMs}ms):`, 'color: #4ade80;');
+        console.groupEnd();
+        return {
+          success: true,
+          method: 'Direct Web DOM Scraper',
+          url: cleanUrl,
+          content: text,
+          wordCount: text.split(/\s+/).length,
+          durationMs
+        };
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  console.warn('⚠️ Impossibile leggere il contenuto completo di questo URL.');
+  console.groupEnd();
+  return {
+    success: false,
+    url: cleanUrl,
+    error: 'Impossibile estrarre il testo dal sito web (sito protetto da Cloudflare/CORS o non raggiungibile).',
+    durationMs: Date.now() - startTime
+  };
+};
+
 export const getSearchLogsHistory = () => searchLogsHistory;
+
