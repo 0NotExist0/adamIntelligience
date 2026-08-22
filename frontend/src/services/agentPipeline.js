@@ -38,8 +38,7 @@ export const analyzePromptHeuristically = (prompt) => {
   const isCode = /codice|script|python|javascript|react|html|css|sql|funzione|bug|regex|typescript|java|c\+\+|api|endpoint|json|class|component/i.test(p);
   const isMath = /calcola|quanto fa|formula|percentuale|algoritmo|matematica|equazione|statistica|derivata|integrale/i.test(p);
   const isCreative = /inventa|racconta|storia|poesia|creativo|favola|sceneggiatura|testo canzone|metafora|dialogo fantastico/i.test(p);
-  const isFactual = /chi è|cosa è|quando|dove|notizie|chi ha vinto|versione|prezzo|meteo|anno|storia di|capitale|definizione/i.test(p);
-  const hasRecentKeywords = /ultim|oggi|2026|2025|2024|attual|news|aggiornat|nuovo modello|rilascio/i.test(p);
+  const isSearchOrFactual = /cerca|trova|internet|web|google|pulman|pullman|bus|orari|orario|treno|treni|meteo|prezzo|prezzi|notizie|news|quando|dove|chi è|cosa è|chi ha|come arrivare|linea|fermata|volo|voli|ristorante|hotel|aggiornat|nuov|ultim|oggi|domani|2026|2025|2024/i.test(p);
 
   let task_type = 'general_qa';
   let temperature = 0.5;
@@ -58,7 +57,7 @@ export const analyzePromptHeuristically = (prompt) => {
     task_type = 'creative_writing';
     temperature = 0.85;
     max_tokens = 8192;
-  } else if (isFactual || hasRecentKeywords) {
+  } else if (isSearchOrFactual) {
     task_type = 'factual_query';
     temperature = 0.2;
     max_tokens = 6144;
@@ -68,7 +67,7 @@ export const analyzePromptHeuristically = (prompt) => {
   // Clean search query
   const cleanSearchQuery = prompt
     .replace(/[?!.,;:]/g, '')
-    .replace(/\b(spiegami|dimmi|cosa sai di|vorrei sapere|per favore|come funziona)\b/gi, '')
+    .replace(/\b(cerca su internet|cerca sul web|cerca|trova|spiegami|dimmi|cosa sai di|vorrei sapere|per favore|come funziona)\b/gi, '')
     .trim()
     .slice(0, 100);
 
@@ -76,13 +75,13 @@ export const analyzePromptHeuristically = (prompt) => {
     task_type,
     temperature,
     max_tokens,
-    needs_web_search: needs_web_search || hasRecentKeywords,
+    needs_web_search: needs_web_search || isSearchOrFactual,
     search_query: cleanSearchQuery || prompt.slice(0, 80),
     reasoning_strategy: isCode 
       ? 'Verifica rigorosa della sintassi e best practice' 
       : isMath 
       ? 'Risoluzione logico-matematica deterministica' 
-      : (needs_web_search ? 'Cross-referencing con fonti Web in tempo reale' : 'Analisi concettuale strutturata')
+      : (needs_web_search || isSearchOrFactual ? 'Fact-Checking & Verifica con Console Web in tempo reale' : 'Analisi concettuale strutturata')
   };
 };
 
@@ -234,6 +233,12 @@ ${webData.summary_text || 'Nessuna ricerca web attiva per questa richiesta.'}
 
 3. 🥉 PRIORITÀ 3: CONOSCENZA INTERNA DEL MODELLO.
    Utilizzata per sintesi, logica e spiegazione coerente.
+
+=============================================================================
+🌐 [VERIFICA E FACT-CHECKING OBBLIGATORIO CONSOLE & INSPECTOR]:
+- Per qualsiasi domanda che richiede informazioni del mondo reale, orari di trasporto (pullman, treni, bus, aerei), eventi, attualità, persone, luoghi o specifiche tecniche, DEVI OBBLIGATORIAMENTE verificare i dati tramite la Console Fact-Checking Web.
+- Non inventare mai orari o fatti: se non hai dati web completi, invoca il tool [web_search(query="...")] per estrarre le fonti in tempo reale.
+- Nella tua risposta finale, esponi in modo chiaro e dettagliato le informazioni trovate citando le relative fonti verificate.
 
 =============================================================================
 🎯 [LINEE GUIDA PER LA RISPOSTA]:
@@ -414,6 +419,12 @@ ${webData.summary_text || 'Nessuna ricerca web preliminare.'}
 
 3. 🥉 PRIORITÀ 3: CONOSCENZA INTERNA DEL MODELLO.
    Utilizzata per sintesi, logica e spiegazione coerente.
+
+=============================================================================
+🌐 [VERIFICA E FACT-CHECKING OBBLIGATORIO CONSOLE & INSPECTOR]:
+- Per qualsiasi domanda che richiede informazioni del mondo reale, orari di trasporto (pullman, treni, bus, aerei), eventi, attualità, persone, luoghi o specifiche tecniche, DEVI OBBLIGATORIAMENTE verificare i dati tramite la Console Fact-Checking Web.
+- Non inventare mai orari o fatti: se non hai dati web completi, invoca il tool [web_search(query="...")] per estrarre le fonti in tempo reale.
+- Nella tua risposta finale, esponi in modo chiaro e dettagliato le informazioni trovate citando le relative fonti verificate.
 
 =============================================================================
 🎯 [LINEE GUIDA PER LA RISPOSTA]:
