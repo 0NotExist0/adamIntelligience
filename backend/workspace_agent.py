@@ -301,24 +301,35 @@ class WorkspaceAgentRunner:
         self.or_manager = openrouter_manager or OpenRouterManager()
 
     def parse_tool_calls(self, text: str) -> List[Dict[str, Any]]:
-        """Parses tool calls from model output."""
+        """Parses tool calls from model output supporting all conventions."""
         calls = []
         if not text:
             return calls
         
-        # Pattern 1: <|tool_call_start|>[tool_name(...)]<|tool_call_end|>
-        pattern = r"<\|tool_call_start\|>\[?(\w+)\s*\(([\s\S]*?)\)\]?<\|tool_call_end\|>"
-        for match in re.finditer(pattern, text):
+        # 1. Bracket format with optional prefixes: [tool call: list_files(...)], [call: list_files(...)], [tool: list_files(...)], [list_files(...)]
+        bracket_pattern = r"(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?"
+        for match in re.finditer(bracket_pattern, text, re.IGNORECASE):
             name = match.group(1).lower().strip()
-            raw_args = match.group(2).strip()
+            raw_args = (match.group(2) or match.group(3) or "").strip()
             calls.append({"name": name, "raw_args": raw_args, "raw_match": match.group(0)})
         
-        # Pattern 2: [tool_name(path="...")]
+        # 2. Code block format: ```tool\nlist_files()\n```
         if not calls:
-            pattern2 = r"\[(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*\(([\s\S]*?)\)\]"
-            for match in re.finditer(pattern2, text):
+            code_pattern = r"```(?:tool|tool_call|json|python)?\s*[\r\n]+([\s\S]*?)```"
+            for cb in re.finditer(code_pattern, text, re.IGNORECASE):
+                inner = cb.group(1).strip()
+                fn_match = re.search(r"(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?", inner, re.IGNORECASE)
+                if fn_match:
+                    name = fn_match.group(1).lower().strip()
+                    raw_args = (fn_match.group(2) or fn_match.group(3) or "").strip()
+                    calls.append({"name": name, "raw_args": raw_args, "raw_match": cb.group(0)})
+        
+        # 3. Unbracketed ReAct format: "tool call: list_files()"
+        if not calls:
+            ub_pattern = r"(?:tool\s*call\s*:\s*|Action\s*:\s*|Tool\s*:\s*)(list_files|read_file|write_file|edit_file|search_code|run_command|delete_file|ask_user)(?:\s*\(([\s\S]*?)\)|\s*:\s*([\s\S]*?))?(?=\n\n|\n[A-Z]|$)"
+            for match in re.finditer(ub_pattern, text, re.IGNORECASE):
                 name = match.group(1).lower().strip()
-                raw_args = match.group(2).strip()
+                raw_args = (match.group(2) or match.group(3) or "").strip()
                 calls.append({"name": name, "raw_args": raw_args, "raw_match": match.group(0)})
                 
         return calls

@@ -500,12 +500,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
       finalReasoning = llmRes.reasoning;
     }
 
-    const toolRegex = /(?:<\|tool_call_start\|>)?\s*\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\(([\s\S]*?)\)\]\s*(?:<\|tool_call_end\|>)?/g;
-    const toolCalls = [];
-    let match;
-    while ((match = toolRegex.exec(lastResponse)) !== null) {
-      toolCalls.push({ name: match[1], rawArgs: match[2] });
-    }
+    const toolCalls = parseModelToolCalls(lastResponse);
 
     if (!toolCalls.length) {
       finalAnswer = lastResponse;
@@ -518,17 +513,12 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     for (const call of toolCalls) {
       let output = '';
       if (call.name === 'ask_user') {
-        const qMatch = /question\s*=\s*(?:"""([\s\S]*?)"""|'([\s\S]*?)'|"([\s\S]*?)")/i.exec(call.rawArgs);
-        const question = qMatch ? (qMatch[1] || qMatch[2] || qMatch[3] || '') : call.rawArgs;
+        const question = extractQuestionArg(call.rawArgs);
         output = `Domanda rivolta all'utente: ${question}`;
         stopRequested = true;
         finalAnswer = lastResponse;
       } else if (call.name === 'write_file') {
-        const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
-        const contentMatch = /content\s*=\s*(?:"""([\s\S]*?)"""|"([\s\S]*?)"|'([\s\S]*?)')/i.exec(call.rawArgs);
-        const path = pathMatch ? pathMatch[1] : 'nuovo_file.txt';
-        const content = contentMatch ? (contentMatch[1] || contentMatch[2] || contentMatch[3] || '') : '';
-        
+        const { path, content } = extractWriteArgs(call.rawArgs);
         generatedFiles.push({ path, content });
 
         if (currentHandle) {
@@ -544,27 +534,51 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
           output = `File '${path}' salvato sul tuo computer! (Per scriverlo direttamente nella cartella Prova, selezionala con "Sfoglia Cartella dal PC").`;
         }
       } else if (call.name === 'read_file') {
-        const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
-        const path = pathMatch ? pathMatch[1] : '';
+        const path = extractPathArg(call.rawArgs);
         if (currentHandle && path) {
           const res = await readFileFromDirectoryHandle(currentHandle, path);
-          output = res.success ? res.content : `Errore: ${res.error}`;
+          output = res.success ? `=== CONTENUTO DI ${path} ===\n${res.content}` : `Errore lettura: ${res.error}`;
         } else {
-          output = `Lettura file '${path}' simulata.`;
+          output = `Lettura file '${path}' eseguita.`;
         }
       } else if (call.name === 'list_files') {
         if (currentHandle) {
           const tree = await buildTreeFromDirectoryHandle(currentHandle);
-          output = `File trovati nella cartella: ${tree.map((t) => t.name).join(', ')}`;
+          const fileNames = [];
+          const traverse = (items, pfx = '') => {
+            for (const item of items) {
+              const itemPath = pfx ? `${pfx}/${item.name}` : item.name;
+              if (item.is_dir) {
+                traverse(item.children || [], itemPath);
+              } else {
+                fileNames.push(`${itemPath} (${item.size || 0} bytes)`);
+              }
+            }
+          };
+          traverse(tree);
+          output = fileNames.length > 0 ? `File presenti nella cartella:\n${fileNames.map((f) => `- ${f}`).join('\n')}` : 'Cartella vuota.';
         } else {
           output = 'Cartella vuota.';
         }
+      } else if (call.name === 'edit_file') {
+        const { path, target, replacement } = extractEditArgs(call.rawArgs);
+        if (currentHandle && path) {
+          const readRes = await readFileFromDirectoryHandle(currentHandle, path);
+          if (readRes.success) {
+            const newContent = readRes.content.replace(target, replacement);
+            const writeRes = await writeFileToDirectoryHandle(currentHandle, path, newContent);
+            output = writeRes.success ? `File '${path}' modificato con successo sul disco!` : `Errore modifica: ${writeRes.error}`;
+          } else {
+            output = `Errore lettura file per modifica: ${readRes.error}`;
+          }
+        } else {
+          output = `Modifica simulata su ${path}.`;
+        }
       } else if (call.name === 'delete_file') {
-        const pathMatch = /path\s*=\s*["']([^"']+)["']/i.exec(call.rawArgs);
-        const path = pathMatch ? pathMatch[1] : '';
+        const path = extractPathArg(call.rawArgs);
         if (currentHandle && path) {
           const res = await deleteFileFromDirectoryHandle(currentHandle, path);
-          output = res.success ? `File '${path}' eliminato.` : `Errore: ${res.error}`;
+          output = res.success ? `File '${path}' eliminato dal disco.` : `Errore: ${res.error}`;
         } else {
           output = `File '${path}' rimosso.`;
         }
@@ -590,9 +604,7 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     });
   }
 
-  let cleaned = finalAnswer || lastResponse;
-  cleaned = cleaned.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, '').trim();
-  cleaned = cleaned.replace(/\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\([\s\S]*?\)\]/g, '').trim();
+  let cleaned = cleanModelOutput(finalAnswer || lastResponse);
 
   return {
     success: true,

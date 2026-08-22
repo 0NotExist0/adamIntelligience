@@ -451,18 +451,20 @@ Rispondi usando i blocchi tool nel formato [tool_name(...)] o <|tool_call_start|
     )
     
     content = llm_res.get("content", "")
-    tool_matches = re.findall(r"\[(write_file|read_file|edit_file|delete_file|list_files|ask_user)\s*\(([\s\S]*?)\)\]", content)
+    bracket_pattern = r"(?:<\|tool_call_start\|>)?\s*\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\(([\s\S]*?)\)|\[([\s\S]*?)\])?\s*\]\s*(?:<\|tool_call_end\|>)?"
+    tool_matches = re.findall(bracket_pattern, content, re.IGNORECASE)
     steps = []
-    for idx, (tname, targs) in enumerate(tool_matches, start=1):
+    for idx, (tname, targs, targs2) in enumerate(tool_matches, start=1):
+        raw_a = (targs or targs2 or "").strip()
         steps.append({
             "iteration": idx,
-            "tool": tname,
-            "args": targs,
-            "result": {"output": f"Tool {tname} completato"}
+            "tool": tname.lower(),
+            "args": raw_a,
+            "result": {"output": f"Tool {tname.lower()} completato"}
         })
 
     cleaned = re.sub(r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>", "", content).strip()
-    cleaned = re.sub(r"\[(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*\([\s\S]*?\)\]", "", cleaned).strip()
+    cleaned = re.sub(r"\[\s*(?:tool\s*call\s*:\s*|call\s*:\s*|tool\s*:\s*|action\s*:\s*)?\s*(list_files|read_file|write_file|edit_file|delete_file|ask_user)\s*(?:\([\s\S]*?\)|\[[\s\S]*?\])?\s*\]", "", cleaned, flags=re.IGNORECASE).strip()
 
     return {
         "success": llm_res.get("success", False),
